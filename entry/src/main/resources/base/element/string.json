@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "纯本地运行的鸿蒙水印相机与图片工具"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "映刻水印相机主窗口"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "映刻水印相机"
+    },
+    {
+      "name": "camera_permission_reason",
+      "value": "用于拍摄照片并在设备本地添加水印"
+    }
+  ]
+}
