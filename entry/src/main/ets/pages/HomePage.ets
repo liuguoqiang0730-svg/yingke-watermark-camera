@@ -5,7 +5,7 @@ import { WatermarkPreset } from '../models/WatermarkTemplate';
 @Component
 struct HomePage {
   @State private currentBreakpoint: string = 'xs';
-  @State private selectedWatermark: WatermarkPreset = WatermarkPreset.TIME_LOCATION;
+  @State private selectedWatermark: WatermarkPreset = WatermarkPreset.CUSTOM;
 
   private isExpanded(): boolean {
     return this.currentBreakpoint === 'md';
@@ -43,15 +43,7 @@ struct HomePage {
 
   private selectWatermark(preset: WatermarkPreset): void {
     this.selectedWatermark = preset;
-    if (preset === WatermarkPreset.CUSTOM) {
-      try {
-        this.getUIContext().getRouter().pushUrl({ url: 'pages/SettingsPage' });
-      } catch (_) {
-        this.showToast('暂时无法打开水印设置');
-      }
-    }
   }
-
   @Builder
   private settingsGlyph() {
     Column({ space: 4 }) {
