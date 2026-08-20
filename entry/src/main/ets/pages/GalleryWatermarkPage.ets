@@ -201,22 +201,33 @@ struct GalleryWatermarkPage {
           y: Math.max(12, this.previewHeight - 74)
         })
       } else {
-        Column({ space: 14 }) {
-          Text('▧').fontSize(46).fontColor('#E96832')
-            .width(86).height(86).textAlign(TextAlign.Center)
-            .backgroundColor('#FFF0E3').borderRadius(24)
-          Text('导入一张图片').fontSize(21).fontWeight(FontWeight.Bold).fontColor('#3B2117')
-          Text('支持系统相册中的常见图片格式').fontSize(13).fontColor('#9A725C')
-          Button('选择图片').height(46).padding({ left: 28, right: 28 })
-            .type(ButtonType.Normal).fontSize(15).fontWeight(FontWeight.Bold)
-            .fontColor(Color.White).backgroundColor('#E96832').borderRadius(23)
-            .enabled(!this.selecting).onClick(() => this.choosePhoto())
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(210).height(210).fill('#33F6A56A')
+            .position({ x: Math.max(12, this.previewWidth - 160), y: -72 })
+          Circle().width(128).height(128).fill('#28E96832')
+            .position({ x: -42, y: Math.max(20, this.previewHeight - 92) })
+          Column({ space: 14 }) {
+            Image($r('app.media.foreground')).width(82).height(82)
+              .borderRadius(22).shadow({ radius: 18, color: '#30A7552C', offsetY: 7 })
+            Text('选一张照片，开始设计水印').fontSize(21)
+              .fontWeight(FontWeight.Bold).fontColor('#3B2117')
+            Text('支持系统相册中的常见图片格式').fontSize(13).fontColor('#9A725C')
+            Button('从相册选择').height(46).padding({ left: 30, right: 30 })
+              .type(ButtonType.Normal).fontSize(15).fontWeight(FontWeight.Bold)
+              .fontColor(Color.White).backgroundColor('#E96832').borderRadius(23)
+              .enabled(!this.selecting).onClick(() => this.choosePhoto())
+            Text('照片仅在本机处理').fontSize(11).fontColor('#A97960')
+              .padding({ left: 11, right: 11, top: 5, bottom: 5 })
+              .backgroundColor('#BFFFFFFF').borderRadius(14)
+          }
         }
+        .width('100%').height('100%')
+        .linearGradient({ angle: 135, colors: [['#FFFFFAF5', 0.0], ['#FFFFE6D2', 1.0]] })
       }
     }
     .width('100%').height(this.isTablet() ? 520 : 360)
-    .backgroundColor('#241B17').borderRadius(26).clip(true)
-    .border({ width: 1, color: '#E7CDBA' })
+    .backgroundColor(this.sourceUri ? '#241B17' : '#FFF3E7').borderRadius(26).clip(true)
+    .border({ width: 1, color: this.sourceUri ? '#E7CDBA' : '#F0C9A9' })
     .onAreaChange((_oldValue, newValue) => {
       this.previewWidth = Number(newValue.width);
       this.previewHeight = Number(newValue.height);
