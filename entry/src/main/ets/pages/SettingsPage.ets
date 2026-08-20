@@ -24,6 +24,7 @@ struct SettingsPage {
   @State private previewHeight: number = 0;
   @State private dirty: boolean = false;
   @State private loading: boolean = true;
+  @State private showExitDialog: boolean = false;
 
   private readonly repository: SettingsRepository = new SettingsRepository();
   private readonly mediaService: MediaService = new MediaService();
@@ -35,6 +36,10 @@ struct SettingsPage {
   }
 
   onBackPress(): boolean {
+    if (this.showExitDialog) {
+      this.showExitDialog = false;
+      return true;
+    }
     this.requestExit();
     return true;
   }
@@ -93,6 +98,7 @@ struct SettingsPage {
       this.dirty = false;
       this.showToast('默认水印模板已保存');
       if (closeAfterSave) {
+        this.showExitDialog = false;
         this.getUIContext().getRouter().back();
       }
     } catch (error) {
@@ -105,21 +111,12 @@ struct SettingsPage {
       this.getUIContext().getRouter().back();
       return;
     }
-    AlertDialog.show({
-      title: '保存本次编辑？',
-      message: '保存后，这套水印会作为以后每次打开相机时的默认模板。',
-      primaryButton: {
-        value: '保存并退出',
-        fontColor: '#E96832',
-        action: () => this.save(true)
-      },
-      secondaryButton: {
-        value: '不保存',
-        fontColor: '#7A5A49',
-        action: () => this.getUIContext().getRouter().back()
-      },
-      cancel: () => {}
-    });
+    this.showExitDialog = true;
+  }
+
+  private discardAndExit(): void {
+    this.showExitDialog = false;
+    this.getUIContext().getRouter().back();
   }
 
   private markDirty(): void {
@@ -291,6 +288,14 @@ struct SettingsPage {
     return Math.max(24, this.previewWidth * this.brandSizePercent / 100);
   }
 
+  private brandBadgeWidth(): number {
+    return Math.max(132, this.brandSize() + 108);
+  }
+
+  private brandBadgeHeight(): number {
+    return Math.max(36, this.brandSize() + 12);
+  }
+
   private showToast(message: string): void {
     try {
       this.getUIContext().getPromptAction().showToast({ message: message });
@@ -301,21 +306,17 @@ struct SettingsPage {
   @Builder
   private previewBackdrop() {
     Stack() {
+      Image($r('app.media.settings_preview_lakeside'))
+        .width('100%').height('100%').objectFit(ImageFit.Cover)
       Column()
         .width('100%').height('100%')
         .linearGradient({
-          angle: 145,
-          colors: [['#D9B89A', 0.0], ['#F2D8B8', 0.42], ['#7F9B84', 1.0]]
+          angle: 180,
+          colors: [['#08000000', 0.0], ['#14000000', 0.58], ['#3D120B07', 1.0]]
         })
-      Circle().width(88).height(88).fill('#55FFF2D6').position({ x: '72%', y: '12%' })
-      Row({ space: 10 }) {
-        Column().width('32%').height(110).backgroundColor('#806C4E3A').borderRadius({ topLeft: 18, topRight: 18 })
-        Column().width('22%').height(150).backgroundColor('#70503B30').borderRadius({ topLeft: 15, topRight: 15 })
-        Column().width('28%').height(92).backgroundColor('#80644B3B').borderRadius({ topLeft: 16, topRight: 16 })
-      }.width('92%').alignItems(VerticalAlign.Bottom).position({ x: '4%', y: '58%' })
-      Text('默认预览画面').fontSize(11).fontColor('#EFFFFFFF')
+      Text('默认预览画面').fontSize(11).fontColor('#F5FFFFFF')
         .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-        .backgroundColor('#55000000').borderRadius(12).position({ x: 16, y: 16 })
+        .backgroundColor('#66332119').borderRadius(12).position({ x: 16, y: 16 })
     }.width('100%').height('100%')
   }
 
@@ -348,13 +349,20 @@ struct SettingsPage {
           })
         }
       }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
-      Image($r('app.media.startIcon'))
-        .width(this.brandSize()).height(this.brandSize()).borderRadius(this.brandSize() * 0.22)
-        .opacity(this.brandOpacity)
-        .position({
-          x: Math.max(12, this.previewWidth - this.brandSize() - 18),
-          y: Math.max(12, this.previewHeight - this.brandSize() - 18)
-        })
+      Row({ space: 6 }) {
+        Image($r('app.media.startIcon'))
+          .width(this.brandSize()).height(this.brandSize()).borderRadius(this.brandSize() * 0.22)
+        Text('映刻水印相机').fontSize(10).fontWeight(FontWeight.Medium).fontColor(Color.White).maxLines(1)
+      }
+      .width(this.brandBadgeWidth()).height(this.brandBadgeHeight())
+      .padding({ left: 6, right: 9 })
+      .backgroundColor('#B238281F').borderRadius(this.brandBadgeHeight() / 2)
+      .border({ width: 1, color: '#55FFFFFF', radius: this.brandBadgeHeight() / 2 })
+      .opacity(this.brandOpacity)
+      .position({
+        x: Math.max(12, this.previewWidth - this.brandBadgeWidth() - 18),
+        y: Math.max(12, this.previewHeight - this.brandBadgeHeight() - 18)
+      })
     }
     .width('100%').height(this.isExpanded() ? 470 : 320)
     .clip(true).borderRadius(26)
@@ -516,8 +524,53 @@ struct SettingsPage {
     .border({ width: 1, color: '#EED7C5', radius: 24 })
   }
 
+  @Builder
+  private exitConfirmOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column().width('100%').height('100%').backgroundColor('#730F0906')
+      Column({ space: 16 }) {
+        Row({ space: 12 }) {
+          Image($r('app.media.startIcon')).width(44).height(44).borderRadius(12)
+          Column({ space: 3 }) {
+            Text('保存水印编辑').fontSize(19).fontWeight(FontWeight.Bold).fontColor('#3B2117')
+            Text('将作为以后拍摄的默认样式').fontSize(12).fontColor('#A07A63')
+          }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+          Button('×').width(34).height(34).fontSize(22).type(ButtonType.Normal)
+            .fontColor('#7A5A49').backgroundColor('#FFF0E3').borderRadius(17)
+            .onClick(() => this.showExitDialog = false)
+        }.width('100%')
+
+        Column({ space: 9 }) {
+          Text('要保存这次编辑吗？').fontSize(17).fontWeight(FontWeight.Bold)
+            .fontColor('#4A3025').width('100%')
+          Text('保存后，文字、图片、大小和位置会在下次打开相机时自动应用；拍摄页中的临时修改不会覆盖这里。')
+            .fontSize(13).lineHeight(20).fontColor('#80604E').width('100%')
+        }.width('100%').padding(16).backgroundColor('#FFF7EE').borderRadius(18)
+          .border({ width: 1, color: '#F0D5BF', radius: 18 })
+
+        Button('保存并退出').width('100%').height(48).type(ButtonType.Normal)
+          .fontSize(15).fontWeight(FontWeight.Bold).fontColor(Color.White)
+          .backgroundColor('#E96832').borderRadius(24)
+          .onClick(() => this.save(true))
+        Row({ space: 10 }) {
+          Button('不保存').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(13)
+            .fontColor('#A24C3A').backgroundColor('#FFF1E8').borderRadius(21)
+            .onClick(() => this.discardAndExit())
+          Button('继续编辑').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(13)
+            .fontColor('#6F4C3A').backgroundColor('#F7E8DA').borderRadius(21)
+            .onClick(() => this.showExitDialog = false)
+        }.width('100%')
+      }
+      .width(this.isExpanded() ? 440 : '88%').constraintSize({ maxWidth: 440 })
+      .padding(this.isExpanded() ? 24 : 20)
+      .backgroundColor('#FFFDF9').borderRadius(28)
+      .border({ width: 1, color: '#E8C7AE', radius: 28 })
+      .shadow({ radius: 34, color: '#52000000', offsetY: 14 })
+    }.width('100%').height('100%').zIndex(100)
+  }
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column() {
       Row({ space: 14 }) {
         Button('‹').width(46).height(46).fontSize(27).type(ButtonType.Normal)
           .fontColor('#5A3829').backgroundColor('#FFF0E3').borderRadius(23)
@@ -567,6 +620,10 @@ struct SettingsPage {
       if (this.loading) {
         LoadingProgress().width(36).height(36).color('#E96832').position({ x: '50%', y: '50%' })
       }
-    }.width('100%').height('100%').backgroundColor('#FFF8F0')
+      }.width('100%').height('100%').backgroundColor('#FFF8F0')
+      if (this.showExitDialog) {
+        this.exitConfirmOverlay()
+      }
+    }.width('100%').height('100%')
   }
 }
