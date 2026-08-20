@@ -1,6 +1,11 @@
 import { common } from '@kit.AbilityKit';
+import {
+  APPROXIMATE_LOCATION_PERMISSION,
+  PermissionManager
+} from '../common/permission/PermissionManager';
 import { WatermarkBrandBadge } from '../components/WatermarkBrandBadge';
 import { AppError, AppErrorCode } from '../models/AppError';
+import { PermissionState } from '../models/PermissionState';
 import {
   cloneWatermarkElement,
   createDefaultWatermarkTemplate,
@@ -23,6 +28,7 @@ struct GalleryWatermarkPage {
   @State private selectedPreset: WatermarkPreset = WatermarkPreset.CUSTOM;
   @State private template: WatermarkTemplateConfig = createDefaultWatermarkTemplate();
   @State private selecting: boolean = false;
+  @State private requestingLocation: boolean = false;
   @State private errorMessage: string = '';
   @State private viewportWidth: number = 0;
   @State private previewWidth: number = 0;
@@ -49,16 +55,45 @@ struct GalleryWatermarkPage {
       return;
     }
     if (preset === WatermarkPreset.TIME_LOCATION) {
-      const cached = this.locationService.getCachedLocation();
-      this.template = createTimeLocationWatermarkTemplate(new Date(),
-        cached ? cached.locationText : '当前位置',
-        cached ? cached.coordinateText : '经纬度');
+      this.selectTimeLocationPreset();
       return;
     }
     try {
       this.template = this.settingsRepository.load(this.abilityContext).template;
     } catch (_) {
       this.template = createDefaultWatermarkTemplate();
+    }
+  }
+
+  private async selectTimeLocationPreset(): Promise<void> {
+    if (this.requestingLocation) {
+      return;
+    }
+    this.selectedPreset = WatermarkPreset.TIME_LOCATION;
+    let permissionState = PermissionManager.getInstance().checkPermission(
+      this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
+    if (permissionState !== PermissionState.GRANTED) {
+      this.requestingLocation = true;
+      permissionState = await PermissionManager.getInstance()
+        .requestLocationPermissions(this.abilityContext);
+    }
+    if (permissionState !== PermissionState.GRANTED) {
+      this.requestingLocation = false;
+      this.template = createTimeLocationWatermarkTemplate(
+        new Date(), '位置未授权', '经纬度未授权');
+      this.showToast('未获得定位权限，地点信息无法显示');
+      return;
+    }
+    this.requestingLocation = true;
+    try {
+      const location = await this.locationService.getCurrentLocation();
+      this.template = createTimeLocationWatermarkTemplate(
+        new Date(), location.locationText, location.coordinateText);
+    } catch (_) {
+      this.template = createTimeLocationWatermarkTemplate(
+        new Date(), '位置未获取', '经纬度未获取');
+    } finally {
+      this.requestingLocation = false;
     }
   }
 
