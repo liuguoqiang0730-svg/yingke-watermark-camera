@@ -1,28 +1,23 @@
-import { AppError, AppErrorCode } from '../models/AppError';
-import { ToolsViewModel } from '../viewmodels/ToolsViewModel';
-import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
+import { BottomModuleSwitcher, HomeModule } from '../components/BottomModuleSwitcher';
 
 @Entry
 @Component
 struct ToolsPage {
-  @State private selecting: boolean = false;
-  private readonly viewModel: ToolsViewModel = new ToolsViewModel();
+  @State private currentBreakpoint: string = 'xs';
 
-  private async selectPhoto(): Promise<void> {
-    if (this.selecting) {
+  private isExpanded(): boolean {
+    return this.currentBreakpoint === 'md';
+  }
+
+  private switchModule(module: HomeModule): void {
+    if (module === HomeModule.TOOLS) {
       return;
     }
-    this.selecting = true;
+    const route = module === HomeModule.CAMERA ? 'pages/HomePage' : 'pages/AiPlayPage';
     try {
-      const uri = await this.viewModel.selectPhoto();
-      this.getUIContext().getRouter().pushUrl({ url: 'pages/ResultPage', params: { sourceUri: uri } });
-    } catch (error) {
-      const appError = error as AppError;
-      if (appError.code !== AppErrorCode.USER_CANCELLED) {
-        this.showToast(ErrorMessageUtil.from(error as object, '无法选择照片。'));
-      }
-    } finally {
-      this.selecting = false;
+      this.getUIContext().getRouter().replaceUrl({ url: route });
+    } catch (_) {
+      this.showToast('暂时无法切换模块');
     }
   }
 
@@ -34,43 +29,90 @@ struct ToolsPage {
   }
 
   @Builder
-  private futureCard(icon: string, title: string, description: string) {
-    Row({ space: 16 }) {
-      Text(icon).fontSize(28).width(52).height(52).textAlign(TextAlign.Center)
-        .backgroundColor('#EEF1F6').borderRadius(16)
+  private header() {
+    Row({ space: 14 }) {
+      Image($r('app.media.foreground')).width(this.isExpanded() ? 58 : 52)
+        .height(this.isExpanded() ? 58 : 52).borderRadius(16)
       Column({ space: 4 }) {
-        Text(title).fontSize(17).fontWeight(FontWeight.Medium).fontColor('#667085')
-        Text(description).fontSize(13).fontColor('#98A2B3')
+        Text('图片工具').fontSize(this.isExpanded() ? 27 : 24)
+          .fontWeight(FontWeight.Bold).fontColor('#3B2117')
+        Text('常用图片能力，一步快速处理').fontSize(14).fontColor('#A07A63')
+      }.alignItems(HorizontalAlign.Start)
+        .padding({ top: this.isExpanded() ? 13 : 10 })
+      Blank()
+    }.width('100%').alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
+  private featureCard(icon: string, title: string, description: string) {
+    Row({ space: this.isExpanded() ? 22 : 14 }) {
+      Text(icon).fontSize(this.isExpanded() ? 30 : 24)
+        .fontWeight(FontWeight.Bold).fontColor('#F05A20')
+        .width(this.isExpanded() ? 88 : 68).height(this.isExpanded() ? 88 : 68)
+        .textAlign(TextAlign.Center).backgroundColor('#FFF0DE')
+        .borderRadius(this.isExpanded() ? 24 : 19)
+      Column({ space: this.isExpanded() ? 8 : 5 }) {
+        Text(title).fontSize(this.isExpanded() ? 22 : 18)
+          .fontWeight(FontWeight.Bold).fontColor('#3B2117')
+        Text(description).fontSize(this.isExpanded() ? 15 : 13)
+          .fontColor('#9B7761').maxLines(2)
       }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-      Text('后续').fontSize(12).fontColor('#98A2B3')
-    }.width('100%').padding(16).backgroundColor('#FAFBFC').borderRadius(20)
+      Row({ space: this.isExpanded() ? 14 : 8 }) {
+        Text('后续开放').fontSize(this.isExpanded() ? 13 : 11).fontColor('#D55A28')
+          .padding({
+            left: this.isExpanded() ? 14 : 9,
+            right: this.isExpanded() ? 14 : 9,
+            top: 6,
+            bottom: 6
+          })
+          .backgroundColor('#FFE7D2').borderRadius(16)
+        Text('›').fontSize(this.isExpanded() ? 32 : 26).fontColor('#6F4C3A')
+      }
+    }
+    .width('100%').height(this.isExpanded() ? 144 : 116)
+    .padding({ left: this.isExpanded() ? 24 : 16, right: this.isExpanded() ? 24 : 16 })
+    .backgroundColor('#FFFDF9').borderRadius(this.isExpanded() ? 26 : 22)
+    .border({ width: 1, color: '#F2DCCB' })
+    .shadow({ radius: 16, color: '#10000000', offsetY: 5 })
   }
 
   build() {
-    Scroll() {
-      Column({ space: 18 }) {
-        Row() {
-          Button('‹').type(ButtonType.Normal).onClick(() => this.getUIContext().getRouter().back())
-          Text('图片工具').fontSize(24).fontWeight(FontWeight.Bold)
-            .layoutWeight(1).textAlign(TextAlign.Center)
-          Blank().width(52)
-        }.width('100%')
+    Column() {
+      Scroll() {
+        Column({ space: 24 }) {
+          this.header()
+          GridRow({
+            columns: 12,
+            breakpoints: { value: ['600vp', '840vp'], reference: BreakpointsReference.WindowSize }
+          }) {
+            GridCol({ span: 12 }) {
+              Column({ space: this.isExpanded() ? 18 : 14 }) {
+                Text('选择一个工具').fontSize(this.isExpanded() ? 26 : 22)
+                  .fontWeight(FontWeight.Bold).fontColor('#3B2117').width('100%')
+                this.featureCard('▦', '多图拼接', '纵向、横向与网格拼图')
+                this.featureCard('OCR', '文字识别', '端侧 OCR 与结果复制')
+                this.featureCard('◉', '主体分割', '透明图片与背景替换')
+              }.width('100%')
+            }
+          }
+          .width('100%')
+          .onBreakpointChange((breakpoint: string) => this.currentBreakpoint = breakpoint)
+        }
+        .width('100%').constraintSize({ maxWidth: 1480 }).justifyContent(FlexAlign.Start)
+        .padding({
+          left: this.isExpanded() ? 40 : 20,
+          right: this.isExpanded() ? 40 : 20,
+          top: this.isExpanded() ? 28 : 76,
+          bottom: 24
+        })
+      }.width('100%').layoutWeight(1).align(Alignment.TopStart)
 
-        Column({ space: 14 }) {
-          Text('相册水印').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#172033')
-          Text('通过系统 PhotoPicker 选择一张照片，无需申请整个相册权限。')
-            .fontSize(14).fontColor('#667085').lineHeight(21)
-          Button(this.selecting ? '正在打开相册…' : '选择照片并添加水印')
-            .width('100%').height(52).enabled(!this.selecting).onClick(() => this.selectPhoto())
-        }.width('100%').padding(22).alignItems(HorizontalAlign.Start)
-          .backgroundColor('#FFFFFF').borderRadius(24)
-
-        Text('后续图片能力').fontSize(18).fontWeight(FontWeight.Bold)
-          .width('100%').margin({ top: 10 })
-        this.futureCard('🧩', '多图拼接', '纵向、横向与网格拼图')
-        this.futureCard('🔤', '文字识别', '端侧 OCR 与结果复制')
-        this.futureCard('✂️', '主体分割', '透明 PNG 与背景替换')
-      }.width('100%').padding({ left: 22, right: 22, top: 34, bottom: 32 })
-    }.width('100%').height('100%').backgroundColor('#F5F7FB')
+      BottomModuleSwitcher({
+        selectedModule: HomeModule.TOOLS,
+        onModuleChange: (module: HomeModule) => this.switchModule(module)
+      })
+        .width(this.isExpanded() ? 680 : '92%').constraintSize({ maxWidth: 680 })
+        .margin({ top: 8, bottom: this.isExpanded() ? 16 : 10 })
+    }.width('100%').height('100%').justifyContent(FlexAlign.Start).backgroundColor('#FFF8F0')
   }
 }
