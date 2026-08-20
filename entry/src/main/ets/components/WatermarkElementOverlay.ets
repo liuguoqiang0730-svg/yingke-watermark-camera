@@ -25,7 +25,10 @@ export struct WatermarkElementOverlay {
   @State private contentWidth: number = 120;
   @State private contentHeight: number = 48;
   @State private dragging: boolean = false;
+  @State private dragOffsetX: number = 0;
+  @State private dragOffsetY: number = 0;
   @State private pinching: boolean = false;
+  @State private pinchGestureScale: number = 1;
   private dragStartX: number = 0;
   private dragStartY: number = 0;
   private pinchStartScale: number = 1;
@@ -46,28 +49,77 @@ export struct WatermarkElementOverlay {
     return Math.max(1, this.frameHeight - this.contentHeight);
   }
 
+  private currentScale(): number {
+    return this.pinching ?
+      this.clamp(this.pinchStartScale * this.pinchGestureScale, 0.5, 2.5) : this.scaleFactor;
+  }
+
   private currentX(): number {
+    if (this.dragging) {
+      return this.clamp(this.dragStartX + this.dragOffsetX,
+        this.frameX, this.frameX + this.availableWidth());
+    }
     return this.frameX + this.clamp(this.positionX, 0, 1) * this.availableWidth();
   }
 
   private currentY(): number {
+    if (this.dragging) {
+      return this.clamp(this.dragStartY + this.dragOffsetY,
+        this.frameY, this.frameY + this.availableHeight());
+    }
     return this.frameY + this.clamp(this.positionY, 0, 1) * this.availableHeight();
   }
 
-  private moveTo(targetX: number, targetY: number): void {
-    if (!this.editable) {
+  private updateDrag(offsetX: number, offsetY: number): void {
+    if (!this.editable || !this.dragging) {
       return;
     }
-    const x = this.clamp(targetX - this.frameX, 0, this.availableWidth()) / this.availableWidth();
-    const y = this.clamp(targetY - this.frameY, 0, this.availableHeight()) / this.availableHeight();
-    this.onPositionChange(this.elementId, x, y);
+    const targetX = this.clamp(this.dragStartX + offsetX,
+      this.frameX, this.frameX + this.availableWidth());
+    const targetY = this.clamp(this.dragStartY + offsetY,
+      this.frameY, this.frameY + this.availableHeight());
+    this.dragOffsetX = targetX - this.dragStartX;
+    this.dragOffsetY = targetY - this.dragStartY;
   }
 
-  private resize(gestureScale: number): void {
-    if (!this.editable) {
+  private commitDrag(): void {
+    if (!this.dragging) {
       return;
     }
-    this.onScaleChange(this.elementId, this.clamp(this.pinchStartScale * gestureScale, 0.5, 2.5));
+    const x = this.clamp(this.currentX() - this.frameX, 0, this.availableWidth()) / this.availableWidth();
+    const y = this.clamp(this.currentY() - this.frameY, 0, this.availableHeight()) / this.availableHeight();
+    this.onPositionChange(this.elementId, x, y);
+    this.dragging = false;
+    this.dragOffsetX = 0;
+    this.dragOffsetY = 0;
+  }
+
+  private cancelDrag(): void {
+    this.dragging = false;
+    this.dragOffsetX = 0;
+    this.dragOffsetY = 0;
+  }
+
+  private updatePinch(gestureScale: number): void {
+    if (!this.editable || !this.pinching) {
+      return;
+    }
+    this.pinchGestureScale = gestureScale;
+  }
+
+  private commitPinch(): void {
+    if (!this.pinching) {
+      return;
+    }
+    const scale = this.currentScale();
+    this.onScaleChange(this.elementId, scale);
+    this.pinching = false;
+    this.pinchGestureScale = 1;
+  }
+
+  private cancelPinch(): void {
+    this.pinching = false;
+    this.pinchGestureScale = 1;
   }
 
   @Builder
@@ -75,19 +127,19 @@ export struct WatermarkElementOverlay {
     if (this.elementType === WatermarkElementType.IMAGE) {
       if (this.imageUri.length > 0) {
         Image(this.imageUri)
-          .width(this.sizeValue * this.scaleFactor)
-          .height(this.sizeValue * this.scaleFactor)
+          .width(this.sizeValue * this.currentScale())
+          .height(this.sizeValue * this.currentScale())
           .objectFit(ImageFit.Contain)
           .borderRadius(8)
       } else {
         Text('图片').fontSize(12).fontColor(Color.White)
-          .width(this.sizeValue * this.scaleFactor)
-          .height(this.sizeValue * this.scaleFactor)
+          .width(this.sizeValue * this.currentScale())
+          .height(this.sizeValue * this.currentScale())
           .textAlign(TextAlign.Center).backgroundColor('#99000000').borderRadius(8)
       }
     } else {
       Text(this.text.length > 0 ? this.text : '双击编辑文字')
-        .fontSize(this.sizeValue * this.scaleFactor)
+        .fontSize(this.sizeValue * this.currentScale())
         .fontWeight(FontWeight.Bold).fontColor(Color.White)
         .constraintSize({ maxWidth: this.textMaxWidth() })
         .maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -114,7 +166,7 @@ export struct WatermarkElementOverlay {
       this.contentHeight = Number(newValue.height);
     })
     .onClick(() => this.onSelect(this.elementId))
-    .gesture(
+    .priorityGesture(
       GestureGroup(GestureMode.Parallel,
         PanGesture({ fingers: 1, direction: PanDirection.All, distance: 1 })
           .onActionStart(() => {
@@ -122,27 +174,28 @@ export struct WatermarkElementOverlay {
               return;
             }
             this.onSelect(this.elementId);
-            this.dragging = true;
             this.dragStartX = this.currentX();
             this.dragStartY = this.currentY();
+            this.dragOffsetX = 0;
+            this.dragOffsetY = 0;
+            this.dragging = true;
           })
-          .onActionUpdate((event: GestureEvent) => {
-            this.moveTo(this.dragStartX + event.offsetX, this.dragStartY + event.offsetY);
-          })
-          .onActionEnd(() => this.dragging = false)
-          .onActionCancel(() => this.dragging = false),
+          .onActionUpdate((event: GestureEvent) => this.updateDrag(event.offsetX, event.offsetY))
+          .onActionEnd(() => this.commitDrag())
+          .onActionCancel(() => this.cancelDrag()),
         PinchGesture({ fingers: 2, distance: 5 })
           .onActionStart(() => {
             if (!this.editable) {
               return;
             }
             this.onSelect(this.elementId);
-            this.pinching = true;
             this.pinchStartScale = this.scaleFactor;
+            this.pinchGestureScale = 1;
+            this.pinching = true;
           })
-          .onActionUpdate((event: GestureEvent) => this.resize(event.scale))
-          .onActionEnd(() => this.pinching = false)
-          .onActionCancel(() => this.pinching = false),
+          .onActionUpdate((event: GestureEvent) => this.updatePinch(event.scale))
+          .onActionEnd(() => this.commitPinch())
+          .onActionCancel(() => this.cancelPinch()),
         TapGesture({ count: 2 }).onAction(() => this.onEditRequest(this.elementId))
       )
     )

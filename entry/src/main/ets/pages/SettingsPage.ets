@@ -280,9 +280,7 @@ struct SettingsPage {
   }
 
   private elementRenderKey(element: WatermarkElementConfig): string {
-    return element.id + '_' + element.type + '_' + element.text + '_' + element.imageUri + '_' +
-      element.visible + '_' + element.positionX + '_' + element.positionY + '_' + element.scaleFactor + '_' +
-      element.opacity + '_' + element.sizePercent;
+    return element.id;
   }
 
   private brandSize(): number {
