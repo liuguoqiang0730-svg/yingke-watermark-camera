@@ -102,7 +102,9 @@ struct CameraPage {
       this.loadCustomWatermark();
       return;
     }
-    if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+    if (this.selectedPreset === WatermarkPreset.TIME_LOCATION &&
+      PermissionManager.getInstance().checkPermission(
+        this.abilityContext, APPROXIMATE_LOCATION_PERMISSION) === PermissionState.GRANTED) {
       const cachedLocation = this.locationService.getCachedLocation();
       if (cachedLocation) {
         this.locationText = cachedLocation.locationText;
@@ -168,16 +170,18 @@ struct CameraPage {
   }
 
   private loadCurrentLocationWatermark(): Promise<void> {
-    const cachedLocation = this.locationService.getCachedLocation();
-    if (cachedLocation) {
-      this.applyCurrentLocation(cachedLocation);
-      this.refreshDynamicWatermark();
-      return Promise.resolve();
-    }
     if (!this.locationTask) {
-      this.locationTask = this.resolveCurrentLocationWatermark();
+      this.locationTask = this.runCurrentLocationWatermarkTask();
     }
     return this.locationTask;
+  }
+
+  private async runCurrentLocationWatermarkTask(): Promise<void> {
+    try {
+      await this.resolveCurrentLocationWatermark();
+    } finally {
+      this.locationTask = undefined;
+    }
   }
 
   private applyCurrentLocation(location: WatermarkLocationInfo): void {
@@ -186,13 +190,30 @@ struct CameraPage {
   }
 
   private async resolveCurrentLocationWatermark(): Promise<void> {
-    const permissionState = PermissionManager.getInstance().checkPermission(
+    let permissionState = PermissionManager.getInstance().checkPermission(
       this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
+    if (permissionState !== PermissionState.GRANTED) {
+      this.statusText = '地点水印需要定位权限';
+      permissionState = await PermissionManager.getInstance()
+        .requestLocationPermissions(this.abilityContext);
+    }
     if (permissionState !== PermissionState.GRANTED) {
       this.locationText = '位置未授权';
       this.coordinateText = '经纬度未授权';
       this.refreshDynamicWatermark();
+      if (this.ready) {
+        this.statusText = '';
+      }
       this.showToast('未获得定位权限，时间水印仍可正常使用');
+      return;
+    }
+    const cachedLocation = this.locationService.getCachedLocation();
+    if (cachedLocation) {
+      this.applyCurrentLocation(cachedLocation);
+      this.refreshDynamicWatermark();
+      if (this.ready) {
+        this.statusText = '';
+      }
       return;
     }
     try {
@@ -204,6 +225,9 @@ struct CameraPage {
       AppLogger.warn(TAG, `获取水印位置失败：${JSON.stringify(error)}`);
     }
     this.refreshDynamicWatermark();
+    if (this.ready) {
+      this.statusText = '';
+    }
   }
 
   aboutToDisappear(): void {
@@ -279,6 +303,9 @@ struct CameraPage {
     if (this.permissionState === PermissionState.GRANTED) {
       await this.startCamera();
       await this.setImmersive(true);
+      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+        await this.loadCurrentLocationWatermark();
+      }
     }
   }
 
