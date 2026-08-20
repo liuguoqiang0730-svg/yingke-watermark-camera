@@ -197,6 +197,7 @@ struct ResultPage {
     if (!this.previewUri || this.processing) {
       return;
     }
+    this.errorMessage = '';
     this.processing = true;
     this.progressMessage = this.plainResult ? '正在保存拼接图片…' : '正在生成高清水印照片…';
     try {
@@ -206,9 +207,9 @@ struct ResultPage {
         await this.viewModel.save(
           this.abilityContext, this.createConfig(), $r('app.media.startIcon'));
       }
-      this.getUIContext().getPromptAction().showToast({ message: '已另存为新的相册图片，原图未修改。' });
-    } catch (error) {
-      this.errorMessage = ErrorMessageUtil.from(error as object, '保存失败。');
+      this.showToast('保存成功');
+    } catch (_error) {
+      this.showToast('保存失败');
     } finally {
       this.processing = false;
     }
@@ -482,7 +483,7 @@ struct ResultPage {
                   this.save();
                   return;
                 }
-                this.showToast('未获得保存授权，请重试。');
+                this.showToast('保存失败');
               })
           }.layoutWeight(1)
           Button('分享').width(112).height(52).type(ButtonType.Normal)
