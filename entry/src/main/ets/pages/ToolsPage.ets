@@ -93,6 +93,14 @@ struct ToolsPage {
     }
   }
 
+  private openCollage(): void {
+    try {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/CollagePage' });
+    } catch (_) {
+      this.showToast('暂时无法打开多图拼接。');
+    }
+  }
+
   @Builder
   private header() {
     Row({ space: 14 }) {
@@ -123,7 +131,7 @@ struct ToolsPage {
           .fontColor('#9B7761').maxLines(2)
       }.alignItems(HorizontalAlign.Start).layoutWeight(1)
       Row({ space: this.isExpanded() ? 14 : 8 }) {
-        Text(available ? (this.ocrInitializing ? '准备中' : '立即使用') : '后续开放')
+        Text(available ? (title === '文字识别' && this.ocrInitializing ? '准备中' : '立即使用') : '后续开放')
           .fontSize(this.isExpanded() ? 13 : 11).fontColor('#D55A28')
           .padding({
             left: this.isExpanded() ? 14 : 9,
@@ -142,7 +150,11 @@ struct ToolsPage {
     .shadow({ radius: 16, color: '#10000000', offsetY: 5 })
     .onClick(() => {
       if (available) {
-        this.startTextRecognition();
+        if (title === '多图拼接') {
+          this.openCollage();
+        } else {
+          this.startTextRecognition();
+        }
       }
     })
   }
@@ -208,7 +220,7 @@ struct ToolsPage {
               Column({ space: this.isExpanded() ? 18 : 14 }) {
                 Text('选择一个工具').fontSize(this.isExpanded() ? 26 : 22)
                   .fontWeight(FontWeight.Bold).fontColor('#3B2117').width('100%')
-                this.featureCard('▦', '多图拼接', '纵向、横向与网格拼图')
+                this.featureCard('▦', '多图拼接', '纵向、横向与网格拼图', true)
                 this.featureCard('OCR', '文字识别', '端侧 OCR 与结果复制', true)
                 this.featureCard('◉', '主体分割', '透明图片与背景替换')
                 if (this.ocrBusy) {

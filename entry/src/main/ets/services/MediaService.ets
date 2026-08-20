@@ -25,16 +25,21 @@ class SingleShareOptions implements systemShare.ShareControllerOptions {
 
 export class MediaService {
   async selectPhoto(): Promise<string> {
+    const uris = await this.selectPhotos(1);
+    return uris[0];
+  }
+
+  async selectPhotos(maxCount: number): Promise<string[]> {
     try {
       const options = new photoAccessHelper.PhotoSelectOptions();
       options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
-      options.maxSelectNumber = 1;
+      options.maxSelectNumber = Math.max(1, Math.min(9, Math.round(maxCount)));
       options.isOriginalSupported = true;
       const result = await new photoAccessHelper.PhotoViewPicker().select(options);
       if (result.photoUris.length === 0) {
         throw new AppError(AppErrorCode.USER_CANCELLED, '未选择照片。');
       }
-      return result.photoUris[0];
+      return result.photoUris;
     } catch (error) {
       if (error instanceof AppError) {
         throw error;

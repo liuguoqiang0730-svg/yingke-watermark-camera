@@ -3,6 +3,7 @@
     "pages/HomePage",
     "pages/CameraPage",
     "pages/ToolsPage",
+    "pages/CollagePage",
     "pages/AiPlayPage",
     "pages/ResultPage"
   ]

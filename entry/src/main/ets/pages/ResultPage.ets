@@ -6,6 +6,7 @@ import { WatermarkConfig, WatermarkPosition } from '../models/WatermarkConfig';
 import { PreviewImageResult, ResultViewModel } from '../viewmodels/ResultViewModel';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 import { AppLogger } from '../utils/AppLogger';
+import { TempFileManager } from '../services/TempFileManager';
 
 const TAG: string = 'ResultPage';
 
@@ -21,6 +22,9 @@ class ResultParams {
   showLogo?: boolean;
   positionX?: number;
   positionY?: number;
+  plainResult?: boolean;
+  cleanupSource?: boolean;
+  resultTitle?: string;
 }
 
 @Entry
@@ -41,6 +45,10 @@ struct ResultPage {
   @State private positionX: number = 0.82;
   @State private positionY: number = 0.76;
   @State private resultOnly: boolean = false;
+  @State private plainResult: boolean = false;
+  @State private cleanupSource: boolean = false;
+  @State private resultTitle: string = '';
+  @State private sourceUri: string = '';
   @State private showSettings: boolean = false;
   @State private processing: boolean = false;
   @State private progressMessage: string = '正在处理…';
@@ -59,6 +67,10 @@ struct ResultPage {
   aboutToDisappear(): void {
     this.setImmersive(false);
     this.viewModel.release();
+    if (this.cleanupSource && this.sourceUri) {
+      TempFileManager.cleanup(this.sourceUri);
+      this.sourceUri = '';
+    }
   }
 
   private async setImmersive(enabled: boolean): Promise<void> {
@@ -81,10 +93,11 @@ struct ResultPage {
         throw new Error('没有收到可编辑的图片。');
       }
       this.applyRouteConfig(params);
+      this.sourceUri = params.sourceUri;
       const result: PreviewImageResult = await this.viewModel.load(
         this.abilityContext, params.sourceUri);
-      this.previewUri = this.resultOnly ? await this.viewModel.prepareOutput(
-        this.abilityContext, this.createConfig(), $r('app.media.startIcon')) : result.uri;
+      this.previewUri = this.plainResult ? result.uri : (this.resultOnly ? await this.viewModel.prepareOutput(
+        this.abilityContext, this.createConfig(), $r('app.media.startIcon')) : result.uri);
       this.imageWidth = result.width;
       this.imageHeight = result.height;
     } catch (error) {
@@ -97,6 +110,9 @@ struct ResultPage {
 
   private applyRouteConfig(params: ResultParams): void {
     this.resultOnly = params.resultOnly ?? false;
+    this.plainResult = params.plainResult ?? false;
+    this.cleanupSource = params.cleanupSource ?? false;
+    this.resultTitle = params.resultTitle ?? '';
     if (params.watermarkText !== undefined) {
       this.text = params.watermarkText;
     }
@@ -162,10 +178,14 @@ struct ResultPage {
       return;
     }
     this.processing = true;
-    this.progressMessage = '正在生成高清水印照片…';
+    this.progressMessage = this.plainResult ? '正在保存拼接图片…' : '正在生成高清水印照片…';
     try {
-      await this.viewModel.save(
-        this.abilityContext, this.createConfig(), $r('app.media.startIcon'));
+      if (this.plainResult) {
+        await this.viewModel.saveSource(this.abilityContext);
+      } else {
+        await this.viewModel.save(
+          this.abilityContext, this.createConfig(), $r('app.media.startIcon'));
+      }
       this.getUIContext().getPromptAction().showToast({ message: '已另存为新的相册图片，原图未修改。' });
     } catch (error) {
       this.errorMessage = ErrorMessageUtil.from(error as object, '保存失败。');
@@ -181,8 +201,12 @@ struct ResultPage {
     this.processing = true;
     this.progressMessage = '正在准备系统分享…';
     try {
-      await this.viewModel.share(
-        this.abilityContext, this.createConfig(), $r('app.media.startIcon'));
+      if (this.plainResult) {
+        await this.viewModel.shareSource(this.abilityContext);
+      } else {
+        await this.viewModel.share(
+          this.abilityContext, this.createConfig(), $r('app.media.startIcon'));
+      }
     } catch (error) {
       this.errorMessage = ErrorMessageUtil.from(error as object, '分享失败。');
     } finally {
@@ -406,9 +430,10 @@ struct ResultPage {
           .fontColor(Color.White).backgroundColor('#66000000').borderRadius(24)
           .onClick(() => this.getUIContext().getRouter().back())
         Column({ space: 2 }) {
-          Text(this.resultOnly ? '拍摄完成' : '水印预览')
+          Text(this.resultTitle ? this.resultTitle : (this.resultOnly ? '拍摄完成' : '水印预览'))
             .fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
-          Text(this.resultOnly ? '照片已生成，可保存或分享' : '拖动移动 · 双指缩放 · 双击编辑')
+          Text(this.plainResult ? '拼接图片已生成，可保存或分享' :
+            (this.resultOnly ? '照片已生成，可保存或分享' : '拖动移动 · 双指缩放 · 双击编辑'))
             .fontSize(11).fontColor('#CCFFFFFF')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 12 })
         if (!this.resultOnly) {
@@ -444,7 +469,8 @@ struct ResultPage {
             .enabled(!this.processing && !!this.previewUri).fontSize(16).fontColor(Color.White)
             .backgroundColor('#E96832').borderRadius(26).onClick(() => this.share())
         }.width('100%')
-        Text(this.resultOnly ? '高清水印照片已生成' : '水印仅为实时预览，保存时生成高清照片').fontSize(11)
+        Text(this.plainResult ? '高清拼接图片已生成' :
+          (this.resultOnly ? '高清水印照片已生成' : '水印仅为实时预览，保存时生成高清照片')).fontSize(11)
           .fontColor('#CCFFFFFF').textAlign(TextAlign.Center).width('100%')
       }
       .width(this.isWide() ? 620 : '92%').padding(14)
