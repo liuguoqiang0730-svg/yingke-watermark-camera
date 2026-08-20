@@ -6,14 +6,16 @@ import { AppError, AppErrorCode } from '../models/AppError';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 
 class ImageSharedRecord implements systemShare.SharedRecord {
-  utd: string = uniformTypeDescriptor.UniformDataType.JPEG;
+  utd: string;
   uri?: string;
   title?: string;
   description?: string;
 
   constructor(uri: string) {
     this.uri = uri;
-    this.title = '映刻水印照片';
+    this.utd = uri.toLowerCase().endsWith('.png') ?
+      uniformTypeDescriptor.UniformDataType.PNG : uniformTypeDescriptor.UniformDataType.JPEG;
+    this.title = '映刻图片';
     this.description = '由映刻水印相机在本地生成';
   }
 }

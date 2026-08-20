@@ -7,7 +7,9 @@
     "pages/CollagePage",
     "pages/AiPlayPage",
     "pages/FaceSimilarityPage",
+    "pages/ObjectDetectionPage",
     "pages/ResultPage",
-    "pages/SettingsPage"
+    "pages/SettingsPage",
+    "pages/SubjectSegmentationPage"
   ]
 }

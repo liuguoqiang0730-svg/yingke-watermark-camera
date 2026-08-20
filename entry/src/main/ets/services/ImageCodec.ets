@@ -43,6 +43,12 @@ class JpegPackingOptions implements image.PackingOption {
   needsPackProperties: boolean = false;
 }
 
+class PngPackingOptions implements image.PackingOption {
+  format: string = 'image/png';
+  quality: number = 100;
+  needsPackProperties: boolean = false;
+}
+
 export class ImageCodec {
   async decodePreview(uri: string): Promise<ImageProcessResult> {
     return this.decode(uri, PREVIEW_MAX_EDGE);
@@ -118,6 +124,18 @@ export class ImageCodec {
     } catch (error) {
       throw new AppError(AppErrorCode.IMAGE_PROCESS_FAILED,
         ErrorMessageUtil.from(error as object, '图片编码失败，请重试。'));
+    } finally {
+      await packer.release();
+    }
+  }
+
+  async encodePng(pixelMap: image.PixelMap): Promise<ArrayBuffer> {
+    const packer = image.createImagePacker();
+    try {
+      return await packer.packToData(pixelMap, new PngPackingOptions());
+    } catch (error) {
+      throw new AppError(AppErrorCode.IMAGE_PROCESS_FAILED,
+        ErrorMessageUtil.from(error as object, '透明图片编码失败，请重试。'));
     } finally {
       await packer.release();
     }

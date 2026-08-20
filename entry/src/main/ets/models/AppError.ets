@@ -5,6 +5,7 @@ export enum AppErrorCode {
   IMAGE_DECODE_FAILED = 'image_decode_failed',
   IMAGE_PROCESS_FAILED = 'image_process_failed',
   OCR_FAILED = 'ocr_failed',
+  OBJECT_DETECTION_FAILED = 'object_detection_failed',
   SAVE_FAILED = 'save_failed',
   SHARE_FAILED = 'share_failed',
   USER_CANCELLED = 'user_cancelled',

@@ -36,6 +36,14 @@ struct AiPlayPage {
     }
   }
 
+  private openObjectDetection(): void {
+    try {
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/ObjectDetectionPage' });
+    } catch (_) {
+      this.showToast('暂时无法打开画面识别');
+    }
+  }
+
   @Builder
   private header() {
     Row({ space: 14 }) {
@@ -95,7 +103,8 @@ struct AiPlayPage {
               .fontWeight(FontWeight.Bold).fontColor('#3B2117').width('100%')
             this.featureCard('☺', '相似度趣测', '选择两张人脸照片，看看你们有多像', '立即使用',
               () => this.openFaceSimilarity())
-            this.featureCard('▧', '画面识别', '识别照片中的人物、景物与常见物体', '后续开放', () => {})
+            this.featureCard('▧', '画面识别', '进入独立页面导入图片，识别人、景物与常见物体', '立即使用',
+              () => this.openObjectDetection())
             this.featureCard('◈', '风格玩法', '用本地能力生成更有趣的画面表达', '后续开放', () => {})
           }.width('100%')
         }

@@ -1,13 +1,11 @@
-import { image } from '@kit.ImageKit';
-
 @Component
 export struct ImagePreview {
-  @Prop pixelMap: image.PixelMap | undefined;
+  @Prop sourceUri: string = '';
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      if (this.pixelMap) {
-        Image(this.pixelMap).width('100%').height('100%').objectFit(ImageFit.Contain)
+      if (this.sourceUri) {
+        Image(this.sourceUri).width('100%').height('100%').objectFit(ImageFit.Contain)
       } else {
         Column({ space: 12 }) {
           LoadingProgress().width(36).height(36).color('#365CF5')

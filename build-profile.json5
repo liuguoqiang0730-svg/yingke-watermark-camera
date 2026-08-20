@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\ehang\\.ohos\\config\\default_cameraDemo_cuKSz7rN0ap23GW5V5PCsd-iLnP_Ut8m5XFKq3n6nEM=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B24976201E956B9354379E9D86D12A3B52D4796C2A54ABD52EB69FBD3A1579A2B1E7D25AB8A8A22",
+          "profile": "C:\\Users\\ehang\\.ohos\\config\\default_cameraDemo_cuKSz7rN0ap23GW5V5PCsd-iLnP_Ut8m5XFKq3n6nEM=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\ehang\\.ohos\\config\\default_cameraDemo_cuKSz7rN0ap23GW5V5PCsd-iLnP_Ut8m5XFKq3n6nEM=.p12",
+          "storePassword": "0000001BB9FBEAD26F6C6EB88CDE8936EF1A67EA78BDFC5116C76F295B999C198ECED4198D288D8522F068"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",

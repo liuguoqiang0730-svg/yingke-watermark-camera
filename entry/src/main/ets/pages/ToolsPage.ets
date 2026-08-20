@@ -36,7 +36,6 @@ struct ToolsPage {
     }
   }
 
-
   private openTextRecognition(): void {
     try {
       this.getUIContext().getRouter().pushUrl({ url: 'pages/TextRecognitionPage' });
@@ -44,6 +43,18 @@ struct ToolsPage {
       this.showToast('暂时无法打开文字识别。');
     }
   }
+
+  private openSubjectSegmentation(): void {
+    try {
+      this.getUIContext().getRouter().pushUrl({
+        url: 'pages/SubjectSegmentationPage'
+      });
+    } catch (_) {
+      this.showToast('暂时无法打开主体分割。');
+    }
+  }
+
+
   @Builder
   private header() {
     Row({ space: 14 }) {
@@ -95,8 +106,10 @@ struct ToolsPage {
       if (available) {
         if (title === '多图拼接') {
           this.openCollage();
-        } else {
+        } else if (title === '文字识别') {
           this.openTextRecognition();
+        } else {
+          this.openSubjectSegmentation();
         }
       }
     })
@@ -118,7 +131,7 @@ struct ToolsPage {
                   .fontWeight(FontWeight.Bold).fontColor('#3B2117').width('100%')
                 this.featureCard('▦', '多图拼接', '纵向、横向与网格拼图', true)
                 this.featureCard('OCR', '文字识别', '端侧 OCR 与结果复制', true)
-                this.featureCard('◉', '主体分割', '透明图片与背景替换')
+                this.featureCard('◉', '主体分割', '透明图片与背景替换', true)
               }.width('100%')
             }
           }
