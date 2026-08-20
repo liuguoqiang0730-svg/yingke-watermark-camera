@@ -9,8 +9,8 @@ export struct WatermarkElementOverlay {
   @Prop opacityValue: number = 0.88;
   @Prop sizeValue: number = 18;
   @Prop scaleFactor: number = 1;
-  @Prop positionX: number = 0;
-  @Prop positionY: number = 0;
+  @Prop @Watch('syncPositionX') positionX: number = 0;
+  @Prop @Watch('syncPositionY') positionY: number = 0;
   @Prop frameX: number = 0;
   @Prop frameY: number = 0;
   @Prop frameWidth: number = 0;
@@ -27,11 +27,30 @@ export struct WatermarkElementOverlay {
   @State private dragging: boolean = false;
   @State private dragOffsetX: number = 0;
   @State private dragOffsetY: number = 0;
+  @State private settledPositionX: number = 0;
+  @State private settledPositionY: number = 0;
   @State private pinching: boolean = false;
   @State private pinchGestureScale: number = 1;
   private dragStartX: number = 0;
   private dragStartY: number = 0;
   private pinchStartScale: number = 1;
+
+  aboutToAppear(): void {
+    this.settledPositionX = this.clamp(this.positionX, 0, 1);
+    this.settledPositionY = this.clamp(this.positionY, 0, 1);
+  }
+
+  private syncPositionX(): void {
+    if (!this.dragging) {
+      this.settledPositionX = this.clamp(this.positionX, 0, 1);
+    }
+  }
+
+  private syncPositionY(): void {
+    if (!this.dragging) {
+      this.settledPositionY = this.clamp(this.positionY, 0, 1);
+    }
+  }
 
   private clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
@@ -59,7 +78,7 @@ export struct WatermarkElementOverlay {
       return this.clamp(this.dragStartX + this.dragOffsetX,
         this.frameX, this.frameX + this.availableWidth());
     }
-    return this.frameX + this.clamp(this.positionX, 0, 1) * this.availableWidth();
+    return this.frameX + this.settledPositionX * this.availableWidth();
   }
 
   private currentY(): number {
@@ -67,7 +86,7 @@ export struct WatermarkElementOverlay {
       return this.clamp(this.dragStartY + this.dragOffsetY,
         this.frameY, this.frameY + this.availableHeight());
     }
-    return this.frameY + this.clamp(this.positionY, 0, 1) * this.availableHeight();
+    return this.frameY + this.settledPositionY * this.availableHeight();
   }
 
   private updateDrag(offsetX: number, offsetY: number): void {
@@ -95,6 +114,8 @@ export struct WatermarkElementOverlay {
       this.frameY, this.frameY + this.availableHeight());
     const x = this.clamp(finalX - this.frameX, 0, this.availableWidth()) / this.availableWidth();
     const y = this.clamp(finalY - this.frameY, 0, this.availableHeight()) / this.availableHeight();
+    this.settledPositionX = x;
+    this.settledPositionY = y;
     this.dragging = false;
     this.dragOffsetX = 0;
     this.dragOffsetY = 0;
