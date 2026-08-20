@@ -25,7 +25,9 @@ export class ImageComposer {
       const drawing = canvas.getContext('2d', new RenderingContextSettings(true));
       drawing.drawImage(source, 0, 0, info.size.width, info.size.height);
 
-      const fontSize = Math.max(24, Math.round(info.size.width * config.textSizePercent / 100));
+      const scaleFactor = this.clampScale(config.scaleFactor);
+      const fontSize = Math.max(24,
+        Math.round(info.size.width * config.textSizePercent / 100 * scaleFactor));
       let logoWidth = 0;
       let logoHeight = 0;
       if (config.showLogo) {
@@ -33,7 +35,7 @@ export class ImageComposer {
         logoSource = image.createImageSource(media.buffer as ArrayBuffer);
         logo = await logoSource.createPixelMap();
         const logoInfo = await logo.getImageInfo();
-        logoWidth = Math.round(info.size.width * config.logoSizePercent / 100);
+        logoWidth = Math.round(info.size.width * config.logoSizePercent / 100 * scaleFactor);
         logoHeight = Math.round(logoWidth * logoInfo.size.height / logoInfo.size.width);
       }
 
@@ -44,7 +46,7 @@ export class ImageComposer {
       const groupWidth = Math.max(logoWidth, Math.ceil(textWidth));
       const groupHeight = logoHeight + (logoHeight > 0 && textHeight > 0 ? gap : 0) + textHeight;
       const point = this.resolvePosition(info.size.width, info.size.height,
-        groupWidth, groupHeight, config.position);
+        groupWidth, groupHeight, config);
 
       drawing.globalAlpha = config.opacity;
       if (logo) {
@@ -70,9 +72,9 @@ export class ImageComposer {
   }
 
   private resolvePosition(width: number, height: number, groupWidth: number, groupHeight: number,
-    position: WatermarkPosition): DrawPoint {
+    config: WatermarkConfig): DrawPoint {
     const margin = Math.max(24, Math.round(Math.min(width, height) * 0.04));
-    switch (position) {
+    switch (config.position) {
       case WatermarkPosition.TOP_LEFT:
         return new DrawPoint(margin, margin);
       case WatermarkPosition.TOP_RIGHT:
@@ -81,8 +83,20 @@ export class ImageComposer {
         return new DrawPoint((width - groupWidth) / 2, (height - groupHeight) / 2);
       case WatermarkPosition.BOTTOM_LEFT:
         return new DrawPoint(margin, height - margin - groupHeight);
+      case WatermarkPosition.CUSTOM:
+        return new DrawPoint(
+          margin + this.clamp(config.positionX) * Math.max(0, width - groupWidth - margin * 2),
+          margin + this.clamp(config.positionY) * Math.max(0, height - groupHeight - margin * 2));
       default:
         return new DrawPoint(width - margin - groupWidth, height - margin - groupHeight);
     }
+  }
+
+  private clamp(value: number): number {
+    return Math.min(1, Math.max(0, value));
+  }
+
+  private clampScale(value: number): number {
+    return Math.min(2.5, Math.max(0.5, value));
   }
 }
