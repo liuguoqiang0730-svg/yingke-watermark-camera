@@ -329,6 +329,9 @@ struct CameraPage {
             }.width('100%')
 
             Row({ space: 10 }) {
+              Button('左下').layoutWeight(1).height(42).type(ButtonType.Normal)
+                .fontColor('#5A3829').backgroundColor('#FFF0E3')
+                .onClick(() => this.updatePosition(0.1, 0.72))
               Button('居中').layoutWeight(1).height(42).type(ButtonType.Normal)
                 .fontColor('#5A3829').backgroundColor('#FFF0E3')
                 .onClick(() => this.updatePosition(0.5, 0.5))
