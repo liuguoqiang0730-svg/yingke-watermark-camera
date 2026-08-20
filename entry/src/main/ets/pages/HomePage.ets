@@ -167,7 +167,7 @@ struct HomePage {
     Column({ space: 18 }) {
       Row({ space: 16 }) {
         this.quickActionCard('▧', '相册加水印', '选择已有照片', () => {
-          this.getUIContext().getRouter().pushUrl({ url: 'pages/ToolsPage' });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/GalleryWatermarkPage' });
         })
         this.quickActionCard('◷', '最近作品', '查看本地记录', () => {
           this.showToast('最近作品将在保存首张照片后显示');
