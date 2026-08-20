@@ -80,6 +80,9 @@ export struct WatermarkElementOverlay {
       this.frameY, this.frameY + this.availableHeight());
     this.dragOffsetX = targetX - this.dragStartX;
     this.dragOffsetY = targetY - this.dragStartY;
+    const x = this.clamp(targetX - this.frameX, 0, this.availableWidth()) / this.availableWidth();
+    const y = this.clamp(targetY - this.frameY, 0, this.availableHeight()) / this.availableHeight();
+    this.onPositionChange(this.elementId, x, y);
   }
 
   private commitDrag(): void {
