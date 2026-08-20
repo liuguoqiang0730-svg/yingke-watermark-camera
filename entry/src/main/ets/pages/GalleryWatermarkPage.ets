@@ -354,6 +354,7 @@ struct GalleryWatermarkPage {
               frameWidth: this.previewFrameWidth(),
               frameHeight: this.previewFrameHeight(),
               textMaxWidthValue: this.previewTextMaxWidth(),
+              textRenderScale: 1 / this.getUIContext().vp2px(1),
               interactionPadding: 0,
               selected: element.id === this.selectedWatermarkId,
               editable: !this.requestingLocation,
@@ -369,7 +370,7 @@ struct GalleryWatermarkPage {
           iconSize: this.previewBrandIconSize(),
           badgeWidth: this.previewBrandWidth(),
           badgeHeight: this.previewBrandHeight(),
-          labelSizeValue: this.previewBrandLabelSize(),
+          labelSizeValue: this.previewBrandLabelSize() / this.getUIContext().vp2px(1),
           paddingValue: this.previewBrandPadding(),
           gapValue: this.previewBrandGap(),
           opacityValue: this.template.brandOpacity

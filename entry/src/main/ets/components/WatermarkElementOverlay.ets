@@ -16,6 +16,7 @@ export struct WatermarkElementOverlay {
   @Prop frameWidth: number = 0;
   @Prop frameHeight: number = 0;
   @Prop textMaxWidthValue: number = 0;
+  @Prop textRenderScale: number = 1;
   @Prop interactionPadding: number = 4;
   @Prop selected: boolean = false;
   @Prop editable: boolean = true;
@@ -62,8 +63,12 @@ export struct WatermarkElementOverlay {
     return this.textMaxWidthValue > 0 ? this.textMaxWidthValue : Math.max(120, this.frameWidth * 0.72);
   }
 
-  private currentFontSize(): number {
+  private currentLayoutFontSize(): number {
     return this.sizeValue * this.currentScale();
+  }
+
+  private currentFontSize(): number {
+    return this.currentLayoutFontSize() * this.textRenderScale;
   }
 
   private availableWidth(): number {
@@ -174,16 +179,16 @@ export struct WatermarkElementOverlay {
     } else {
       Text(this.text.length > 0 ? this.text : '双击编辑文字')
         .fontSize(this.currentFontSize())
-        .lineHeight(this.currentFontSize() * 1.28)
+        .lineHeight(this.currentLayoutFontSize() * 1.28)
         .fontWeight(FontWeight.Bold).fontColor(Color.White)
         .constraintSize({ maxWidth: this.textMaxWidth() })
         .wordBreak(WordBreak.BREAK_ALL)
         .maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis })
         .padding({
-          left: this.currentFontSize() * 0.35,
-          right: this.currentFontSize() * 0.35,
-          top: this.currentFontSize() * 0.22,
-          bottom: this.currentFontSize() * 0.22
+          left: this.currentLayoutFontSize() * 0.35,
+          right: this.currentLayoutFontSize() * 0.35,
+          top: this.currentLayoutFontSize() * 0.22,
+          bottom: this.currentLayoutFontSize() * 0.22
         })
         .backgroundColor('#8A1E1510').borderRadius(7)
         .textShadow({ radius: 2, color: '#66000000', offsetX: 0, offsetY: 1 })
@@ -197,8 +202,8 @@ export struct WatermarkElementOverlay {
     .opacity(this.opacityValue)
     .padding(this.interactionPadding)
     .border({
-      width: this.selected || this.dragging || this.pinching ? 2 : 1,
-      color: this.selected || this.dragging || this.pinching ? '#FFF3A066' : '#99FFFFFF',
+      width: this.selected || this.dragging || this.pinching ? 2 : 0,
+      color: this.selected || this.dragging || this.pinching ? '#FFF3A066' : Color.Transparent,
       radius: 10
     })
     .position({ x: this.currentX(), y: this.currentY() })
