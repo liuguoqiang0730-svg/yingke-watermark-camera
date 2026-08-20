@@ -7,6 +7,8 @@ const DOMAIN: number = 0x0000;
 const TAG: string = 'PermissionManager';
 
 export const CAMERA_PERMISSION: Permissions = 'ohos.permission.CAMERA';
+export const APPROXIMATE_LOCATION_PERMISSION: Permissions = 'ohos.permission.APPROXIMATELY_LOCATION';
+export const LOCATION_PERMISSION: Permissions = 'ohos.permission.LOCATION';
 
 export class PermissionManager {
   private static instance: PermissionManager = new PermissionManager();
@@ -57,6 +59,38 @@ export class PermissionManager {
     } catch (error) {
       const businessError = error as BusinessError;
       hilog.error(DOMAIN, TAG, 'Request permission failed. code=%{public}d, message=%{public}s',
+        businessError.code, businessError.message);
+      return PermissionState.ERROR;
+    } finally {
+      this.requesting = false;
+    }
+  }
+
+  async requestLocationPermissions(context: common.UIAbilityContext): Promise<PermissionState> {
+    const currentState = this.checkPermission(context, APPROXIMATE_LOCATION_PERMISSION);
+    if (currentState === PermissionState.GRANTED) {
+      return currentState;
+    }
+    if (this.requesting) {
+      return PermissionState.REQUESTING;
+    }
+
+    this.requesting = true;
+    try {
+      const requestedPermissions: Permissions[] = [
+        APPROXIMATE_LOCATION_PERMISSION,
+        LOCATION_PERMISSION
+      ];
+      const result = await this.atManager.requestPermissionsFromUser(context, requestedPermissions);
+      const permissionIndex = result.permissions.indexOf(APPROXIMATE_LOCATION_PERMISSION);
+      if (permissionIndex < 0 || permissionIndex >= result.authResults.length) {
+        return PermissionState.ERROR;
+      }
+      return result.authResults[permissionIndex] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED ?
+        PermissionState.GRANTED : PermissionState.DENIED;
+    } catch (error) {
+      const businessError = error as BusinessError;
+      hilog.error(DOMAIN, TAG, 'Request location permissions failed. code=%{public}d, message=%{public}s',
         businessError.code, businessError.message);
       return PermissionState.ERROR;
     } finally {

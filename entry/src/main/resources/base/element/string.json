@@ -15,6 +15,10 @@
     {
       "name": "camera_permission_reason",
       "value": "用于拍摄照片并在设备本地添加水印"
+    },
+    {
+      "name": "location_permission_reason",
+      "value": "用于在时间地点水印中显示拍摄位置和经纬度"
     }
   ]
 }

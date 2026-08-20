@@ -60,11 +60,12 @@ struct CameraPage {
   private selectedPreset: WatermarkPreset = WatermarkPreset.TIME_LOCATION;
   private locationText: string = '正在获取位置…';
   private coordinateText: string = '正在获取经纬度…';
+  private locationTask?: Promise<void>;
 
   private readonly controller: XComponentController = new XComponentController();
   private readonly viewModel: CameraViewModel = new CameraViewModel();
   private readonly settingsRepository: SettingsRepository = new SettingsRepository();
-  private readonly locationService: WatermarkLocationService = new WatermarkLocationService();
+  private readonly locationService: WatermarkLocationService = WatermarkLocationService.getInstance();
   private readonly abilityContext: common.UIAbilityContext =
     this.getUIContext().getHostContext() as common.UIAbilityContext;
   private surfaceId: string = '';
@@ -100,6 +101,13 @@ struct CameraPage {
     if (this.selectedPreset === WatermarkPreset.CUSTOM) {
       this.loadCustomWatermark();
       return;
+    }
+    if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+      const cachedLocation = this.locationService.getCachedLocation();
+      if (cachedLocation) {
+        this.locationText = cachedLocation.locationText;
+        this.coordinateText = cachedLocation.coordinateText;
+      }
     }
     const template = this.selectedPreset === WatermarkPreset.MINIMAL_DATE ?
       createMinimalDateWatermarkTemplate(new Date()) :
@@ -159,12 +167,27 @@ struct CameraPage {
     this.watermarkText = firstText?.text ?? this.watermarkText;
   }
 
-  private async loadCurrentLocationWatermark(): Promise<void> {
-    let permissionState = PermissionManager.getInstance().checkPermission(
-      this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
-    if (permissionState !== PermissionState.GRANTED) {
-      permissionState = await PermissionManager.getInstance().requestLocationPermissions(this.abilityContext);
+  private loadCurrentLocationWatermark(): Promise<void> {
+    const cachedLocation = this.locationService.getCachedLocation();
+    if (cachedLocation) {
+      this.applyCurrentLocation(cachedLocation);
+      this.refreshDynamicWatermark();
+      return Promise.resolve();
     }
+    if (!this.locationTask) {
+      this.locationTask = this.resolveCurrentLocationWatermark();
+    }
+    return this.locationTask;
+  }
+
+  private applyCurrentLocation(location: WatermarkLocationInfo): void {
+    this.locationText = location.locationText;
+    this.coordinateText = location.coordinateText;
+  }
+
+  private async resolveCurrentLocationWatermark(): Promise<void> {
+    const permissionState = PermissionManager.getInstance().checkPermission(
+      this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
     if (permissionState !== PermissionState.GRANTED) {
       this.locationText = '位置未授权';
       this.coordinateText = '经纬度未授权';
@@ -174,8 +197,7 @@ struct CameraPage {
     }
     try {
       const location: WatermarkLocationInfo = await this.locationService.getCurrentLocation();
-      this.locationText = location.locationText;
-      this.coordinateText = location.coordinateText;
+      this.applyCurrentLocation(location);
     } catch (error) {
       this.locationText = '位置未获取';
       this.coordinateText = '经纬度未获取';
@@ -265,6 +287,10 @@ struct CameraPage {
       return;
     }
     this.capturing = true;
+    if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+      this.statusText = '正在获取拍摄位置…';
+      await this.loadCurrentLocationWatermark();
+    }
     this.statusText = '正在拍摄…';
     this.refreshDynamicWatermark();
     try {
