@@ -57,18 +57,30 @@ export class ImageComposer {
           } else if (element.type === WatermarkElementType.TEXT && element.text.length > 0) {
             const fontSize = Math.max(24,
               Math.round(info.size.width * element.sizePercent / 100 * this.clampScale(element.scaleFactor)));
-            drawing.font = `bold ${fontSize}px sans-serif`;
-            const textWidth = Math.ceil(drawing.measureText(element.text).width);
-            const gap = Math.round(fontSize * 0.35);
-            const textHeight = Math.round(fontSize * 1.42);
+            drawing.font = 'bold ' + fontSize + 'px sans-serif';
+            const horizontalPadding = Math.round(fontSize * 0.35);
+            const verticalPadding = Math.round(fontSize * 0.22);
+            const lineHeight = Math.round(fontSize * 1.28);
+            const maxTextWidth = Math.max(fontSize,
+              Math.round(info.size.width * 0.68) - horizontalPadding * 2);
+            const textLines = this.buildTextLines(drawing, element.text, maxTextWidth, 6);
+            let textWidth = fontSize;
+            for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
+              textWidth = Math.max(textWidth, Math.ceil(drawing.measureText(textLines[lineIndex]).width));
+            }
+            const blockWidth = textWidth + horizontalPadding * 2;
+            const blockHeight = lineHeight * textLines.length + verticalPadding * 2;
             const point = this.resolveElementPosition(info.size.width, info.size.height,
-              textWidth + gap * 2, textHeight, element);
+              blockWidth, blockHeight, element);
             drawing.globalAlpha = this.clamp(element.opacity);
             drawing.fillStyle = '#8A1E1510';
-            drawing.fillRect(point.x, point.y, textWidth + gap * 2, textHeight);
+            drawing.fillRect(point.x, point.y, blockWidth, blockHeight);
             drawing.fillStyle = '#FFFFFFFF';
             drawing.textBaseline = 'top';
-            drawing.fillText(element.text, point.x + gap, point.y + Math.round(gap * 0.35));
+            for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
+              drawing.fillText(textLines[lineIndex], point.x + horizontalPadding,
+                point.y + verticalPadding + lineIndex * lineHeight);
+            }
           }
         }
         if (logo) {
@@ -113,11 +125,22 @@ export class ImageComposer {
         logoHeight = Math.round(logoWidth * logoInfo.size.height / logoInfo.size.width);
       }
 
-      drawing.font = `bold ${fontSize}px sans-serif`;
-      const textWidth = config.showText ? drawing.measureText(config.text).width : 0;
+      drawing.font = 'bold ' + fontSize + 'px sans-serif';
+      const horizontalPadding = Math.round(fontSize * 0.35);
+      const verticalPadding = Math.round(fontSize * 0.22);
+      const lineHeight = Math.round(fontSize * 1.28);
+      const maxTextWidth = Math.max(fontSize,
+        Math.round(info.size.width * 0.68) - horizontalPadding * 2);
+      const textLines: string[] = config.showText && config.text.length > 0 ?
+        this.buildTextLines(drawing, config.text, maxTextWidth, 6) : [];
+      let textWidth = 0;
+      for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
+        textWidth = Math.max(textWidth, Math.ceil(drawing.measureText(textLines[lineIndex]).width));
+      }
+      const textHeight = textLines.length > 0 ?
+        lineHeight * textLines.length + verticalPadding * 2 : 0;
       const gap = Math.round(fontSize * 0.35);
-      const textHeight = config.showText ? Math.round(fontSize * 1.4) : 0;
-      const groupWidth = Math.max(logoWidth, Math.ceil(textWidth));
+      const groupWidth = Math.max(logoWidth, textLines.length > 0 ? textWidth + horizontalPadding * 2 : 0);
       const groupHeight = logoHeight + (logoHeight > 0 && textHeight > 0 ? gap : 0) + textHeight;
       const point = this.resolvePosition(info.size.width, info.size.height,
         groupWidth, groupHeight, config);
@@ -126,13 +149,16 @@ export class ImageComposer {
       if (logo && config.showLogo) {
         drawing.drawImage(logo, point.x, point.y, logoWidth, logoHeight);
       }
-      if (config.showText && config.text.length > 0) {
+      if (textLines.length > 0) {
         const textY = point.y + logoHeight + (logoHeight > 0 ? gap : 0);
         drawing.fillStyle = '#99000000';
-        drawing.fillRect(point.x - gap, textY - gap / 2, textWidth + gap * 2, textHeight);
+        drawing.fillRect(point.x, textY, textWidth + horizontalPadding * 2, textHeight);
         drawing.fillStyle = '#FFFFFFFF';
         drawing.textBaseline = 'top';
-        drawing.fillText(config.text, point.x, textY);
+        for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
+          drawing.fillText(textLines[lineIndex], point.x + horizontalPadding,
+            textY + verticalPadding + lineIndex * lineHeight);
+        }
       }
       drawing.globalAlpha = 1;
       return drawing.getPixelMap(0, 0, info.size.width, info.size.height);
@@ -151,6 +177,36 @@ export class ImageComposer {
     }
   }
 
+  private buildTextLines(drawing: OffscreenCanvasRenderingContext2D, text: string,
+    maxWidth: number, maxLines: number): string[] {
+    const paragraphs = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines: string[] = [];
+    for (let paragraphIndex = 0;
+      paragraphIndex < paragraphs.length && lines.length < maxLines; paragraphIndex++) {
+      const paragraph = paragraphs[paragraphIndex];
+      if (paragraph.length === 0) {
+        lines.push('');
+        continue;
+      }
+      let currentLine = '';
+      for (const character of paragraph) {
+        const nextLine = currentLine + character;
+        if (currentLine.length > 0 && drawing.measureText(nextLine).width > maxWidth) {
+          lines.push(currentLine);
+          currentLine = character;
+          if (lines.length >= maxLines) {
+            break;
+          }
+        } else {
+          currentLine = nextLine;
+        }
+      }
+      if (lines.length < maxLines && currentLine.length > 0) {
+        lines.push(currentLine);
+      }
+    }
+    return lines.length > 0 ? lines : [''];
+  }
   private resolveElementPosition(width: number, height: number, elementWidth: number, elementHeight: number,
     element: WatermarkElementConfig): DrawPoint {
     const margin = Math.max(18, Math.round(Math.min(width, height) * 0.025));

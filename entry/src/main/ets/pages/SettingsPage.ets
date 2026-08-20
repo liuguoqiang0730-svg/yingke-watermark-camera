@@ -444,8 +444,8 @@ struct SettingsPage {
         if (this.elements[this.selectedIndex()].type === WatermarkElementType.TEXT) {
           Column({ space: 7 }) {
             Text('文字内容').fontSize(13).fontColor('#6F4C3A').width('100%')
-            TextInput({ text: this.elements[this.selectedIndex()].text, placeholder: '输入水印文字' })
-              .width('100%').height(46).maxLength(60).fontSize(14).fontColor('#3B2117')
+            TextArea({ text: this.elements[this.selectedIndex()].text, placeholder: '输入水印文字，回车可换行' })
+              .width('100%').height(88).maxLength(120).fontSize(14).fontColor('#3B2117')
               .backgroundColor('#FFF9F3').borderRadius(14)
               .border({ width: 1, color: '#ECD4C1', radius: 14 })
               .onChange((value: string) => this.updateText(value))

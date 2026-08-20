@@ -34,6 +34,10 @@ export struct WatermarkElementOverlay {
     return Math.min(max, Math.max(min, value));
   }
 
+  private textMaxWidth(): number {
+    return Math.max(120, this.frameWidth * 0.72);
+  }
+
   private availableWidth(): number {
     return Math.max(1, this.frameWidth - this.contentWidth);
   }
@@ -85,7 +89,8 @@ export struct WatermarkElementOverlay {
       Text(this.text.length > 0 ? this.text : '双击编辑文字')
         .fontSize(this.sizeValue * this.scaleFactor)
         .fontWeight(FontWeight.Bold).fontColor(Color.White)
-        .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: this.textMaxWidth() })
+        .maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis })
         .padding({ left: 8, right: 8, top: 5, bottom: 5 })
         .backgroundColor('#8A1E1510').borderRadius(7)
         .textShadow({ radius: 2, color: '#66000000', offsetX: 0, offsetY: 1 })

@@ -590,8 +590,8 @@ struct CameraPage {
             Column({ space: 8 }) {
               Text('水印文字').fontSize(14).fontWeight(FontWeight.Medium)
                 .fontColor('#5A3829').width('100%')
-              TextInput({ text: this.watermarkText, placeholder: '输入水印文字' })
-                .width('100%').height(46).maxLength(40).backgroundColor('#FFF8F1')
+              TextArea({ text: this.watermarkText, placeholder: '输入水印文字，回车可换行' })
+                .width('100%').height(88).maxLength(100).backgroundColor('#FFF8F1')
                 .onChange((value: string) => this.updateSelectedText(value))
             }.width('100%')
 
