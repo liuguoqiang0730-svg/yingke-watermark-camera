@@ -123,6 +123,11 @@ struct AiPlayPage {
       })
         .width(this.isExpanded() ? 680 : '92%').constraintSize({ maxWidth: 680 })
         .margin({ top: 8, bottom: this.isExpanded() ? 16 : 10 })
-    }.width('100%').height('100%').justifyContent(FlexAlign.Start).backgroundColor('#FFF8F0')
+    }
+    .width('100%').height('100%').justifyContent(FlexAlign.Start).backgroundColor('#FFF8F0')
+    .onAreaChange((_oldValue, newValue) => {
+      const width = Number(newValue.width);
+      this.currentBreakpoint = width >= 840 ? 'md' : (width >= 600 ? 'sm' : 'xs');
+    })
   }
 }
