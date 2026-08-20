@@ -86,12 +86,16 @@ export struct WatermarkElementOverlay {
     if (!this.dragging) {
       return;
     }
-    const x = this.clamp(this.currentX() - this.frameX, 0, this.availableWidth()) / this.availableWidth();
-    const y = this.clamp(this.currentY() - this.frameY, 0, this.availableHeight()) / this.availableHeight();
-    this.onPositionChange(this.elementId, x, y);
+    const finalX = this.clamp(this.dragStartX + this.dragOffsetX,
+      this.frameX, this.frameX + this.availableWidth());
+    const finalY = this.clamp(this.dragStartY + this.dragOffsetY,
+      this.frameY, this.frameY + this.availableHeight());
+    const x = this.clamp(finalX - this.frameX, 0, this.availableWidth()) / this.availableWidth();
+    const y = this.clamp(finalY - this.frameY, 0, this.availableHeight()) / this.availableHeight();
     this.dragging = false;
     this.dragOffsetX = 0;
     this.dragOffsetY = 0;
+    this.onPositionChange(this.elementId, x, y);
   }
 
   private cancelDrag(): void {
@@ -184,7 +188,7 @@ export struct WatermarkElementOverlay {
           })
           .onActionUpdate((event: GestureEvent) => this.updateDrag(event.offsetX, event.offsetY))
           .onActionEnd(() => this.commitDrag())
-          .onActionCancel(() => this.cancelDrag()),
+          .onActionCancel(() => this.commitDrag()),
         PinchGesture({ fingers: 2, distance: 5 })
           .onActionStart(() => {
             if (!this.editable) {
