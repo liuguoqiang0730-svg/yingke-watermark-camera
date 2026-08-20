@@ -412,9 +412,24 @@ struct ResultPage {
 
       Column({ space: 10 }) {
         Row({ space: 12 }) {
-          Button('保存到相册').layoutWeight(1).height(52).enabled(!this.processing && !!this.previewUri)
-            .fontSize(16).fontWeight(FontWeight.Bold).fontColor('#3B2117')
-            .backgroundColor('#FFF4E8').borderRadius(26).onClick(() => this.save())
+          Column() {
+            SaveButton({
+              icon: SaveIconStyle.LINES,
+              text: SaveDescription.SAVE_TO_GALLERY,
+              buttonType: ButtonType.Capsule
+            })
+              .width('100%').height(52).enabled(!this.processing && !!this.previewUri)
+              .fontSize(16).fontWeight(FontWeight.Bold).fontColor('#3B2117')
+              .iconSize(18).iconColor('#3B2117').textIconSpace(6)
+              .backgroundColor('#FFF4E8').borderRadius(26)
+              .onClick((_event: ClickEvent, result: SaveButtonOnClickResult) => {
+                if (result === SaveButtonOnClickResult.SUCCESS) {
+                  this.save();
+                  return;
+                }
+                this.showToast('未获得保存授权，请重试。');
+              })
+          }.layoutWeight(1)
           Button('分享').width(112).height(52).type(ButtonType.Normal)
             .enabled(!this.processing && !!this.previewUri).fontSize(16).fontColor(Color.White)
             .backgroundColor('#E96832').borderRadius(26).onClick(() => this.share())
