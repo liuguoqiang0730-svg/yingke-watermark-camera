@@ -173,6 +173,10 @@ struct GalleryWatermarkPage {
     return Math.max(element.type === WatermarkElementType.IMAGE ? 22 : 12, base);
   }
 
+  private elementRenderKey(element: WatermarkElementConfig): string {
+    return `${element.id}:${element.type}:${element.text}:${element.imageUri}`;
+  }
+
   private updateElementPosition(id: string, x: number, y: number): void {
     const updated = cloneWatermarkTemplate(this.template);
     const element = updated.elements.find((item: WatermarkElementConfig) => item.id === id);
@@ -234,7 +238,7 @@ struct GalleryWatermarkPage {
               frameWidth: Math.max(1, this.previewWidth - 32),
               frameHeight: Math.max(1, this.previewHeight - 32),
               selected: element.id === this.selectedWatermarkId,
-              editable: true,
+              editable: !this.requestingLocation,
               onSelect: (id: string) => this.selectedWatermarkId = id,
               onPositionChange: (id: string, x: number, y: number) =>
                 this.updateElementPosition(id, x, y),
@@ -242,7 +246,7 @@ struct GalleryWatermarkPage {
               onEditRequest: (id: string) => this.selectedWatermarkId = id
             })
           }
-        }, (element: WatermarkElementConfig) => element.id)
+        }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
         WatermarkBrandBadge({
           iconSize: 24,
           badgeWidth: 92,
