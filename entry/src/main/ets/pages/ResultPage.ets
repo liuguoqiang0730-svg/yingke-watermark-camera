@@ -11,6 +11,7 @@ const TAG: string = 'ResultPage';
 
 class ResultParams {
   sourceUri: string = '';
+  resultOnly?: boolean;
   watermarkText?: string;
   watermarkOpacity?: number;
   textSizePercent?: number;
@@ -39,6 +40,7 @@ struct ResultPage {
   @State private showLogo: boolean = true;
   @State private positionX: number = 0.82;
   @State private positionY: number = 0.76;
+  @State private resultOnly: boolean = false;
   @State private showSettings: boolean = false;
   @State private processing: boolean = false;
   @State private progressMessage: string = '正在处理…';
@@ -81,7 +83,8 @@ struct ResultPage {
       this.applyRouteConfig(params);
       const result: PreviewImageResult = await this.viewModel.load(
         this.abilityContext, params.sourceUri);
-      this.previewUri = result.uri;
+      this.previewUri = this.resultOnly ? await this.viewModel.prepareOutput(
+        this.abilityContext, this.createConfig(), $r('app.media.startIcon')) : result.uri;
       this.imageWidth = result.width;
       this.imageHeight = result.height;
     } catch (error) {
@@ -93,6 +96,7 @@ struct ResultPage {
   }
 
   private applyRouteConfig(params: ResultParams): void {
+    this.resultOnly = params.resultOnly ?? false;
     if (params.watermarkText !== undefined) {
       this.text = params.watermarkText;
     }
@@ -370,24 +374,26 @@ struct ResultPage {
       if (this.previewUri) {
         Image(this.previewUri).width('100%').height('100%').objectFit(ImageFit.Contain)
 
-        DraggableWatermarkOverlay({
-          text: this.text,
-          showText: this.showText,
-          showLogo: this.showLogo,
-          watermarkOpacity: this.watermarkOpacity / 100,
-          textSize: Math.max(13, this.contentWidth() * this.textSize / 100),
-          logoSize: Math.max(24, this.contentWidth() * this.logoSize / 100),
-          scaleFactor: this.watermarkScale,
-          positionX: this.positionX,
-          positionY: this.positionY,
-          frameX: this.watermarkFrameX(),
-          frameY: this.watermarkFrameY(),
-          frameWidth: this.watermarkFrameWidth(),
-          frameHeight: this.watermarkFrameHeight(),
-          onPositionChange: (x: number, y: number) => this.updatePosition(x, y),
-          onScaleChange: (scale: number) => this.updateScale(scale),
-          onEditRequest: () => this.showSettings = true
-        })
+        if (!this.resultOnly) {
+          DraggableWatermarkOverlay({
+            text: this.text,
+            showText: this.showText,
+            showLogo: this.showLogo,
+            watermarkOpacity: this.watermarkOpacity / 100,
+            textSize: Math.max(13, this.contentWidth() * this.textSize / 100),
+            logoSize: Math.max(24, this.contentWidth() * this.logoSize / 100),
+            scaleFactor: this.watermarkScale,
+            positionX: this.positionX,
+            positionY: this.positionY,
+            frameX: this.watermarkFrameX(),
+            frameY: this.watermarkFrameY(),
+            frameWidth: this.watermarkFrameWidth(),
+            frameHeight: this.watermarkFrameHeight(),
+            onPositionChange: (x: number, y: number) => this.updatePosition(x, y),
+            onScaleChange: (scale: number) => this.updateScale(scale),
+            onEditRequest: () => this.showSettings = true
+          })
+        }
       } else {
         Column({ space: 14 }) {
           LoadingProgress().width(42).height(42).color('#F08A54')
@@ -400,12 +406,16 @@ struct ResultPage {
           .fontColor(Color.White).backgroundColor('#66000000').borderRadius(24)
           .onClick(() => this.getUIContext().getRouter().back())
         Column({ space: 2 }) {
-          Text('水印预览').fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
-          Text('拖动移动 · 双指缩放 · 双击编辑').fontSize(11).fontColor('#CCFFFFFF')
+          Text(this.resultOnly ? '拍摄完成' : '水印预览')
+            .fontSize(18).fontWeight(FontWeight.Bold).fontColor(Color.White)
+          Text(this.resultOnly ? '照片已生成，可保存或分享' : '拖动移动 · 双指缩放 · 双击编辑')
+            .fontSize(11).fontColor('#CCFFFFFF')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1).margin({ left: 12 })
-        Button('⚙').width(48).height(48).fontSize(21).type(ButtonType.Normal)
-          .fontColor(Color.White).backgroundColor('#66000000').borderRadius(24)
-          .onClick(() => this.showSettings = true)
+        if (!this.resultOnly) {
+          Button('⚙').width(48).height(48).fontSize(21).type(ButtonType.Normal)
+            .fontColor(Color.White).backgroundColor('#66000000').borderRadius(24)
+            .onClick(() => this.showSettings = true)
+        }
       }
       .width('100%').padding({ left: 18, right: 18, top: 18, bottom: 16 })
       .backgroundColor('#55000000').position({ x: 0, y: 0 })
@@ -434,7 +444,7 @@ struct ResultPage {
             .enabled(!this.processing && !!this.previewUri).fontSize(16).fontColor(Color.White)
             .backgroundColor('#E96832').borderRadius(26).onClick(() => this.share())
         }.width('100%')
-        Text('水印仅为实时预览，保存时生成高清照片').fontSize(11)
+        Text(this.resultOnly ? '高清水印照片已生成' : '水印仅为实时预览，保存时生成高清照片').fontSize(11)
           .fontColor('#CCFFFFFF').textAlign(TextAlign.Center).width('100%')
       }
       .width(this.isWide() ? 620 : '92%').padding(14)
@@ -452,7 +462,7 @@ struct ResultPage {
         ProcessingProgress({ message: this.progressMessage })
       }
 
-      if (this.showSettings) {
+      if (!this.resultOnly && this.showSettings) {
         this.settingsPanel()
       }
     }

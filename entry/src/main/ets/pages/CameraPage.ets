@@ -137,10 +137,11 @@ struct CameraPage {
       const uri = await this.viewModel.capture(this.abilityContext);
       await this.viewModel.stop();
       this.ready = false;
-      this.getUIContext().getRouter().pushUrl({
+      await this.getUIContext().getRouter().replaceUrl({
         url: 'pages/ResultPage',
         params: {
           sourceUri: uri,
+          resultOnly: true,
           watermarkText: this.watermarkText,
           watermarkOpacity: this.watermarkOpacity,
           textSizePercent: this.textSize,
