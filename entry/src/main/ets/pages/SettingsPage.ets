@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { WatermarkBrandBadge } from '../components/WatermarkBrandBadge';
 import { WatermarkElementOverlay } from '../components/WatermarkElementOverlay';
 import {
   cloneWatermarkElement,
@@ -289,13 +290,12 @@ struct SettingsPage {
   }
 
   private brandBadgeWidth(): number {
-    return Math.max(132, this.brandSize() + 108);
+    return Math.max(92, this.brandSize() + 64);
   }
 
   private brandBadgeHeight(): number {
-    return Math.max(36, this.brandSize() + 12);
+    return Math.max(62, this.brandSize() + 36);
   }
-
   private showToast(message: string): void {
     try {
       this.getUIContext().getPromptAction().showToast({ message: message });
@@ -349,16 +349,12 @@ struct SettingsPage {
           })
         }
       }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
-      Row({ space: 6 }) {
-        Image($r('app.media.startIcon'))
-          .width(this.brandSize()).height(this.brandSize()).borderRadius(this.brandSize() * 0.22)
-        Text('映刻水印相机').fontSize(10).fontWeight(FontWeight.Medium).fontColor(Color.White).maxLines(1)
-      }
-      .width(this.brandBadgeWidth()).height(this.brandBadgeHeight())
-      .padding({ left: 6, right: 9 })
-      .backgroundColor('#B238281F').borderRadius(this.brandBadgeHeight() / 2)
-      .border({ width: 1, color: '#55FFFFFF', radius: this.brandBadgeHeight() / 2 })
-      .opacity(this.brandOpacity)
+      WatermarkBrandBadge({
+        iconSize: this.brandSize(),
+        badgeWidth: this.brandBadgeWidth(),
+        badgeHeight: this.brandBadgeHeight(),
+        opacityValue: this.brandOpacity
+      })
       .position({
         x: Math.max(12, this.previewWidth - this.brandBadgeWidth() - 18),
         y: Math.max(12, this.previewHeight - this.brandBadgeHeight() - 18)

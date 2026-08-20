@@ -6,6 +6,7 @@ import {
   CAMERA_PERMISSION,
   PermissionManager
 } from '../common/permission/PermissionManager';
+import { WatermarkBrandBadge } from '../components/WatermarkBrandBadge';
 import { WatermarkElementOverlay } from '../components/WatermarkElementOverlay';
 import { PermissionGuide } from '../components/PermissionGuide';
 import { PermissionState } from '../models/PermissionState';
@@ -516,6 +517,13 @@ struct CameraPage {
     return Math.max(22, this.viewportWidth * this.brandSizePercent / 100);
   }
 
+  private brandBadgeWidth(): number {
+    return Math.max(92, this.brandDisplaySize() + 64);
+  }
+
+  private brandBadgeHeight(): number {
+    return Math.max(62, this.brandDisplaySize() + 36);
+  }
   private isWide(): boolean {
     return this.viewportWidth >= 700;
   }
@@ -738,14 +746,19 @@ struct CameraPage {
             })
           }
         }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
-        Image($r('app.media.startIcon'))
-          .width(this.brandDisplaySize()).height(this.brandDisplaySize())
-          .borderRadius(this.brandDisplaySize() * 0.22).opacity(this.brandOpacity)
-          .position({
-            x: Math.max(12, this.viewportWidth - this.brandDisplaySize() - 18),
-            y: Math.max(12, this.viewportHeight - this.brandDisplaySize() - 18)
-          })
-      }      if (this.showSettings) {
+        WatermarkBrandBadge({
+          iconSize: this.brandDisplaySize(),
+          badgeWidth: this.brandBadgeWidth(),
+          badgeHeight: this.brandBadgeHeight(),
+          opacityValue: this.brandOpacity
+        })
+        .position({
+          x: Math.max(12, this.viewportWidth - this.brandBadgeWidth() - 18),
+          y: Math.max(12, this.viewportHeight - this.brandBadgeHeight() - 18)
+        })
+      }
+
+      if (this.showSettings) {
         this.settingsPanel()
       }
 

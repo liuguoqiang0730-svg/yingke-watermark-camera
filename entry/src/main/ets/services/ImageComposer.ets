@@ -73,13 +73,30 @@ export class ImageComposer {
         }
         if (logo) {
           const logoInfo = await logo.getImageInfo();
-          const brandWidth = Math.max(20, Math.round(info.size.width * config.brandSizePercent / 100));
-          const brandHeight = Math.max(1,
-            Math.round(brandWidth * logoInfo.size.height / Math.max(1, logoInfo.size.width)));
+          const brandIconWidth = Math.max(20, Math.round(info.size.width * config.brandSizePercent / 100));
+          const brandIconHeight = Math.max(1,
+            Math.round(brandIconWidth * logoInfo.size.height / Math.max(1, logoInfo.size.width)));
+          const brandFontSize = Math.max(14, Math.round(brandIconWidth * 0.38));
+          const brandLabel = '映刻水印相机';
+          drawing.font = 'bold ' + brandFontSize + 'px sans-serif';
+          const brandTextWidth = Math.ceil(drawing.measureText(brandLabel).width);
+          const brandTextHeight = Math.round(brandFontSize * 1.28);
+          const brandGap = Math.max(4, Math.round(brandFontSize * 0.22));
+          const brandPadding = Math.max(7, Math.round(brandFontSize * 0.32));
+          const brandGroupWidth = Math.max(brandIconWidth, brandTextWidth) + brandPadding * 2;
+          const brandGroupHeight = brandPadding * 2 + brandIconHeight + brandGap + brandTextHeight;
           const margin = Math.max(18, Math.round(Math.min(info.size.width, info.size.height) * 0.025));
+          const brandX = info.size.width - margin - brandGroupWidth;
+          const brandY = info.size.height - margin - brandGroupHeight;
           drawing.globalAlpha = this.clamp(config.brandOpacity);
-          drawing.drawImage(logo, info.size.width - margin - brandWidth,
-            info.size.height - margin - brandHeight, brandWidth, brandHeight);
+          drawing.fillStyle = '#9E38281F';
+          drawing.fillRect(brandX, brandY, brandGroupWidth, brandGroupHeight);
+          drawing.drawImage(logo, brandX + (brandGroupWidth - brandIconWidth) / 2,
+            brandY + brandPadding, brandIconWidth, brandIconHeight);
+          drawing.fillStyle = '#FFFFFFFF';
+          drawing.textBaseline = 'top';
+          drawing.fillText(brandLabel, brandX + (brandGroupWidth - brandTextWidth) / 2,
+            brandY + brandPadding + brandIconHeight + brandGap);
         }
         drawing.globalAlpha = 1;
         return drawing.getPixelMap(0, 0, info.size.width, info.size.height);
