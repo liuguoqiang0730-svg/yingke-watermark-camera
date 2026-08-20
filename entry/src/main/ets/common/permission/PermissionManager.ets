@@ -86,8 +86,19 @@ export class PermissionManager {
       if (permissionIndex < 0 || permissionIndex >= result.authResults.length) {
         return PermissionState.ERROR;
       }
-      return result.authResults[permissionIndex] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED ?
-        PermissionState.GRANTED : PermissionState.DENIED;
+      if (result.authResults[permissionIndex] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+        return PermissionState.GRANTED;
+      }
+      const dialogShown = result.dialogShownResults?.[permissionIndex] ?? true;
+      if (!dialogShown) {
+        const grantStatusList = await this.atManager.requestPermissionOnSetting(context, requestedPermissions);
+        if (permissionIndex >= grantStatusList.length) {
+          return PermissionState.ERROR;
+        }
+        return grantStatusList[permissionIndex] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED ?
+          PermissionState.GRANTED : PermissionState.DENIED;
+      }
+      return PermissionState.DENIED;
     } catch (error) {
       const businessError = error as BusinessError;
       hilog.error(DOMAIN, TAG, 'Request location permissions failed. code=%{public}d, message=%{public}s',
