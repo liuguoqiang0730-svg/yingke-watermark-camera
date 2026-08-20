@@ -73,10 +73,13 @@ struct GalleryWatermarkPage {
       return;
     }
     this.selectedPreset = WatermarkPreset.TIME_LOCATION;
+    this.requestingLocation = true;
+    this.selectedWatermarkId = '';
+    this.template = createTimeLocationWatermarkTemplate(
+      new Date(), '正在获取位置…', '正在获取经纬度…');
     let permissionState = PermissionManager.getInstance().checkPermission(
       this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
     if (permissionState !== PermissionState.GRANTED) {
-      this.requestingLocation = true;
       permissionState = await PermissionManager.getInstance()
         .requestLocationPermissions(this.abilityContext);
     }
@@ -87,14 +90,17 @@ struct GalleryWatermarkPage {
       this.showToast('未获得定位权限，地点信息无法显示');
       return;
     }
-    this.requestingLocation = true;
     try {
       const location = await this.locationService.getCurrentLocation();
-      this.template = createTimeLocationWatermarkTemplate(
-        new Date(), location.locationText, location.coordinateText);
+      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+        this.template = createTimeLocationWatermarkTemplate(
+          new Date(), location.locationText, location.coordinateText);
+      }
     } catch (_) {
-      this.template = createTimeLocationWatermarkTemplate(
-        new Date(), '位置未获取', '经纬度未获取');
+      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+        this.template = createTimeLocationWatermarkTemplate(
+          new Date(), '位置未获取', '经纬度未获取');
+      }
     } finally {
       this.requestingLocation = false;
     }
@@ -287,7 +293,10 @@ struct GalleryWatermarkPage {
         Text(icon).fontSize(20).width(38).height(38).textAlign(TextAlign.Center)
           .backgroundColor(this.selectedPreset === preset ? '#FFD7B3' : '#F4E7DB').borderRadius(19)
         Blank()
-        if (this.selectedPreset === preset) {
+        if (this.selectedPreset === preset && preset === WatermarkPreset.TIME_LOCATION &&
+          this.requestingLocation) {
+          LoadingProgress().width(18).height(18).color('#E96832')
+        } else if (this.selectedPreset === preset) {
           Text('✓').fontSize(17).fontWeight(FontWeight.Bold).fontColor('#E96832')
         }
       }.width('100%')
@@ -330,7 +339,8 @@ struct GalleryWatermarkPage {
               Text('下一步仍可编辑').fontSize(12).fontColor('#A07A63')
             }.width('100%')
             Row({ space: 10 }) {
-              this.presetCard(WatermarkPreset.TIME_LOCATION, '●', '时间地点', '时间、地点与经纬度')
+              this.presetCard(WatermarkPreset.TIME_LOCATION, '●', '时间地点',
+                this.requestingLocation ? '正在获取位置…' : '时间、地点与经纬度')
               this.presetCard(WatermarkPreset.MINIMAL_DATE, '▣', '极简日期', '干净简洁的日期样式')
               this.presetCard(WatermarkPreset.CUSTOM, '✎', '自定义', '使用已保存的模板')
             }.width('100%')
@@ -341,11 +351,13 @@ struct GalleryWatermarkPage {
               .padding(12).backgroundColor('#FFFFE9E3').borderRadius(12)
           }
 
-          Button(this.sourceUri ? '继续编辑水印' : '请先导入图片')
+          Button(!this.sourceUri ? '请先导入图片' :
+            this.requestingLocation ? '正在获取位置…' : '下一步')
             .width('100%').height(54).type(ButtonType.Normal)
             .fontSize(17).fontWeight(FontWeight.Bold).fontColor(Color.White)
-            .backgroundColor(this.sourceUri ? '#E96832' : '#D9B8A5').borderRadius(27)
-            .enabled(!!this.sourceUri).onClick(() => this.continueEditing())
+            .backgroundColor(this.sourceUri && !this.requestingLocation ? '#E96832' : '#D9B8A5')
+            .borderRadius(27).enabled(!!this.sourceUri && !this.requestingLocation)
+            .onClick(() => this.continueEditing())
           Text('图片与水印处理均在本机完成').fontSize(12).fontColor('#A07A63')
         }
         .width('100%').constraintSize({ maxWidth: 980 })
