@@ -31,16 +31,24 @@ struct HomePage {
   }
 
   private startCapture(): void {
-    this.getUIContext().getRouter().pushUrl({
-      url: 'pages/CameraPage',
-      params: { watermarkPreset: this.selectedWatermark }
-    });
+    try {
+      this.getUIContext().getRouter().pushUrl({
+        url: 'pages/CameraPage',
+        params: { watermarkPreset: this.selectedWatermark }
+      });
+    } catch (_) {
+      this.showToast('暂时无法打开相机');
+    }
   }
 
   private selectWatermark(preset: WatermarkPreset): void {
     this.selectedWatermark = preset;
     if (preset === WatermarkPreset.CUSTOM) {
-      this.getUIContext().getRouter().pushUrl({ url: 'pages/SettingsPage' });
+      try {
+        this.getUIContext().getRouter().pushUrl({ url: 'pages/SettingsPage' });
+      } catch (_) {
+        this.showToast('暂时无法打开水印设置');
+      }
     }
   }
 
