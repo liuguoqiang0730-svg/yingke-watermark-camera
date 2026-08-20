@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { camera } from '@kit.CameraKit';
 import { image } from '@kit.ImageKit';
+import { display } from '@kit.ArkUI';
 import { AppError, AppErrorCode } from '../models/AppError';
 import { AppLogger } from '../utils/AppLogger';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
@@ -19,9 +20,14 @@ export class CameraService {
   private pendingResolve: ((data: ArrayBuffer) => void) | undefined = undefined;
   private pendingReject: ((reason: Object) => void) | undefined = undefined;
   private started: boolean = false;
+  private deviceDegree: number = 0;
+  private displayListenerRegistered: boolean = false;
 
   private readonly photoCallback = (error: BusinessError, photo: camera.Photo): void => {
     this.handlePhoto(error, photo);
+  };
+  private readonly displayChangeCallback = (_displayId: number): void => {
+    this.updateDeviceRotation();
   };
 
   async initialize(context: common.UIAbilityContext, surfaceId: string,
@@ -54,6 +60,8 @@ export class CameraService {
       await this.session.commitConfig();
       await this.session.start();
       this.started = true;
+      this.updateDeviceRotation();
+      this.registerDisplayListener();
       AppLogger.info(TAG, `相机会话已启动，位置=${position}`);
     } catch (error) {
       await this.release();
@@ -72,7 +80,10 @@ export class CameraService {
       reject: (reason: Object) => void): void => {
       this.pendingResolve = resolve;
       this.pendingReject = reject;
-      this.photoOutput?.capture().catch((error: Object): void => {
+      const rotation = this.photoOutput?.getPhotoRotation(this.deviceDegree) ??
+        camera.ImageRotation.ROTATION_0;
+      const setting: camera.PhotoCaptureSetting = { rotation: rotation };
+      this.photoOutput?.capture(setting).catch((error: Object): void => {
         this.clearPending();
         reject(ErrorMessageUtil.camera(error));
       });
@@ -111,6 +122,7 @@ export class CameraService {
 
   async release(): Promise<void> {
     this.started = false;
+    this.unregisterDisplayListener();
     if (this.pendingReject) {
       this.pendingReject(new AppError(AppErrorCode.CAMERA_UNAVAILABLE, '相机会话已结束。'));
     }
@@ -136,6 +148,57 @@ export class CameraService {
     this.photoOutput = undefined;
     this.input = undefined;
     this.manager = undefined;
+  }
+
+  private registerDisplayListener(): void {
+    if (this.displayListenerRegistered) {
+      return;
+    }
+    try {
+      display.on('change', this.displayChangeCallback);
+      this.displayListenerRegistered = true;
+    } catch (error) {
+      AppLogger.warn(TAG, `注册屏幕方向监听失败：${JSON.stringify(error)}`);
+    }
+  }
+
+  private unregisterDisplayListener(): void {
+    if (!this.displayListenerRegistered) {
+      return;
+    }
+    try {
+      display.off('change', this.displayChangeCallback);
+    } catch (error) {
+      AppLogger.warn(TAG, `移除屏幕方向监听失败：${JSON.stringify(error)}`);
+    } finally {
+      this.displayListenerRegistered = false;
+    }
+  }
+
+  private updateDeviceRotation(): void {
+    try {
+      this.deviceDegree = this.toDeviceDegree(display.getDefaultDisplaySync().rotation);
+      if (this.previewOutput) {
+        const previewRotation = this.previewOutput.getPreviewRotation(this.deviceDegree);
+        this.previewOutput.setPreviewRotation(previewRotation, false);
+      }
+      AppLogger.info(TAG, `相机方向已更新：deviceDegree=${this.deviceDegree}`);
+    } catch (error) {
+      AppLogger.warn(TAG, `更新相机方向失败：${JSON.stringify(error)}`);
+    }
+  }
+
+  private toDeviceDegree(displayRotation: number): number {
+    switch (displayRotation) {
+      case 1:
+        return 90;
+      case 2:
+        return 180;
+      case 3:
+        return 270;
+      default:
+        return 0;
+    }
   }
 
   private async handlePhoto(error: BusinessError, photo: camera.Photo): Promise<void> {
