@@ -35,6 +35,8 @@ struct GalleryWatermarkPage {
   @State private viewportWidth: number = 0;
   @State private previewWidth: number = 0;
   @State private previewHeight: number = 0;
+  @State private sourceImageWidth: number = 0;
+  @State private sourceImageHeight: number = 0;
   @State private selectedWatermarkId: string = '';
 
   private readonly mediaService: MediaService = new MediaService();
@@ -113,7 +115,10 @@ struct GalleryWatermarkPage {
     this.selecting = true;
     this.errorMessage = '';
     try {
-      this.sourceUri = await this.mediaService.selectPhoto();
+      const nextUri = await this.mediaService.selectPhoto();
+      this.sourceImageWidth = 0;
+      this.sourceImageHeight = 0;
+      this.sourceUri = nextUri;
     } catch (error) {
       if (error instanceof AppError && error.code === AppErrorCode.USER_CANCELLED) {
         return;
@@ -168,13 +173,118 @@ struct GalleryWatermarkPage {
     }
   }
 
+  private previewImageWidth(): number {
+    if (this.sourceImageWidth <= 0 || this.sourceImageHeight <= 0) {
+      return this.previewWidth;
+    }
+    const scale = Math.min(this.previewWidth / this.sourceImageWidth,
+      this.previewHeight / this.sourceImageHeight);
+    return this.sourceImageWidth * scale;
+  }
+
+  private previewImageHeight(): number {
+    if (this.sourceImageWidth <= 0 || this.sourceImageHeight <= 0) {
+      return this.previewHeight;
+    }
+    const scale = Math.min(this.previewWidth / this.sourceImageWidth,
+      this.previewHeight / this.sourceImageHeight);
+    return this.sourceImageHeight * scale;
+  }
+
+  private exportImageWidth(): number {
+    if (this.sourceImageWidth <= 0 || this.sourceImageHeight <= 0) {
+      return Math.max(1, this.previewImageWidth());
+    }
+    const scale = Math.min(1, 3072 / Math.max(this.sourceImageWidth, this.sourceImageHeight));
+    return Math.max(1, Math.round(this.sourceImageWidth * scale));
+  }
+
+  private exportImageHeight(): number {
+    if (this.sourceImageWidth <= 0 || this.sourceImageHeight <= 0) {
+      return Math.max(1, this.previewImageHeight());
+    }
+    const scale = Math.min(1, 3072 / Math.max(this.sourceImageWidth, this.sourceImageHeight));
+    return Math.max(1, Math.round(this.sourceImageHeight * scale));
+  }
+
+  private previewToExportScale(): number {
+    const previewImageWidth = this.previewImageWidth();
+    return previewImageWidth > 0 ? previewImageWidth / this.exportImageWidth() : 1;
+  }
+
+  private previewMargin(): number {
+    const exportMargin = Math.max(18,
+      Math.round(Math.min(this.exportImageWidth(), this.exportImageHeight()) * 0.025));
+    return exportMargin * this.previewToExportScale();
+  }
+
+  private previewFrameX(): number {
+    return (this.previewWidth - this.previewImageWidth()) / 2 + this.previewMargin();
+  }
+
+  private previewFrameY(): number {
+    return (this.previewHeight - this.previewImageHeight()) / 2 + this.previewMargin();
+  }
+
+  private previewFrameWidth(): number {
+    return Math.max(1, this.previewImageWidth() - this.previewMargin() * 2);
+  }
+
+  private previewFrameHeight(): number {
+    return Math.max(1, this.previewImageHeight() - this.previewMargin() * 2);
+  }
+
+  private clampElementScale(scale: number): number {
+    return Math.min(2.5, Math.max(0.5, scale));
+  }
+
   private previewElementSize(element: WatermarkElementConfig): number {
-    const base = this.previewWidth * element.sizePercent / 100;
-    return Math.max(element.type === WatermarkElementType.IMAGE ? 22 : 12, base);
+    const scale = this.clampElementScale(element.scaleFactor);
+    const exportSize = Math.max(24,
+      Math.round(this.exportImageWidth() * element.sizePercent / 100 * scale));
+    return exportSize * this.previewToExportScale() / scale;
+  }
+
+  private previewTextMaxWidth(): number {
+    return Math.round(this.exportImageWidth() * 0.68) * this.previewToExportScale();
+  }
+
+  private previewBrandIconSize(): number {
+    const exportSize = Math.max(20,
+      Math.round(this.exportImageWidth() * this.template.brandSizePercent / 100));
+    return exportSize * this.previewToExportScale();
+  }
+
+  private previewBrandLabelSize(): number {
+    const exportIconSize = Math.max(20,
+      Math.round(this.exportImageWidth() * this.template.brandSizePercent / 100));
+    return Math.max(14, Math.round(exportIconSize * 0.38)) * this.previewToExportScale();
+  }
+
+  private previewBrandPadding(): number {
+    const exportLabelSize = this.previewBrandLabelSize() / this.previewToExportScale();
+    return Math.max(7, Math.round(exportLabelSize * 0.32)) * this.previewToExportScale();
+  }
+
+  private previewBrandGap(): number {
+    const exportLabelSize = this.previewBrandLabelSize() / this.previewToExportScale();
+    return Math.max(4, Math.round(exportLabelSize * 0.22)) * this.previewToExportScale();
+  }
+
+  private previewBrandWidth(): number {
+    return Math.max(this.previewBrandIconSize(), this.previewBrandLabelSize() * 6) +
+      this.previewBrandPadding() * 2;
+  }
+
+  private previewBrandHeight(): number {
+    return this.previewBrandPadding() * 2 + this.previewBrandIconSize() +
+      this.previewBrandGap() + this.previewBrandLabelSize() * 1.28;
   }
 
   private elementRenderKey(element: WatermarkElementConfig): string {
-    return `${element.id}:${element.type}:${element.text}:${element.imageUri}`;
+    return `${element.id}:${element.type}:${element.text}:${element.imageUri}:` +
+      `${Math.round(this.previewWidth)}x${Math.round(this.previewHeight)}:` +
+      `${this.sourceImageWidth}x${this.sourceImageHeight}`;
   }
 
   private updateElementPosition(id: string, x: number, y: number): void {
@@ -221,6 +331,12 @@ struct GalleryWatermarkPage {
     Stack({ alignContent: Alignment.Center }) {
       if (this.sourceUri) {
         Image(this.sourceUri).width('100%').height('100%').objectFit(ImageFit.Contain)
+          .onComplete((event) => {
+            if (event && event.width > 0 && event.height > 0) {
+              this.sourceImageWidth = event.width;
+              this.sourceImageHeight = event.height;
+            }
+          })
         ForEach(this.template.elements, (element: WatermarkElementConfig) => {
           if (element.visible) {
             WatermarkElementOverlay({
@@ -233,10 +349,12 @@ struct GalleryWatermarkPage {
               scaleFactor: element.scaleFactor,
               positionX: element.positionX,
               positionY: element.positionY,
-              frameX: 16,
-              frameY: 16,
-              frameWidth: Math.max(1, this.previewWidth - 32),
-              frameHeight: Math.max(1, this.previewHeight - 32),
+              frameX: this.previewFrameX(),
+              frameY: this.previewFrameY(),
+              frameWidth: this.previewFrameWidth(),
+              frameHeight: this.previewFrameHeight(),
+              textMaxWidthValue: this.previewTextMaxWidth(),
+              interactionPadding: 0,
               selected: element.id === this.selectedWatermarkId,
               editable: !this.requestingLocation,
               onSelect: (id: string) => this.selectedWatermarkId = id,
@@ -248,13 +366,18 @@ struct GalleryWatermarkPage {
           }
         }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
         WatermarkBrandBadge({
-          iconSize: 24,
-          badgeWidth: 92,
-          badgeHeight: 62,
+          iconSize: this.previewBrandIconSize(),
+          badgeWidth: this.previewBrandWidth(),
+          badgeHeight: this.previewBrandHeight(),
+          labelSizeValue: this.previewBrandLabelSize(),
+          paddingValue: this.previewBrandPadding(),
+          gapValue: this.previewBrandGap(),
           opacityValue: this.template.brandOpacity
         }).position({
-          x: Math.max(12, this.previewWidth - 104),
-          y: Math.max(12, this.previewHeight - 74)
+          x: (this.previewWidth - this.previewImageWidth()) / 2 + this.previewImageWidth() -
+            this.previewMargin() - this.previewBrandWidth(),
+          y: (this.previewHeight - this.previewImageHeight()) / 2 + this.previewImageHeight() -
+            this.previewMargin() - this.previewBrandHeight()
         })
       } else {
         Stack({ alignContent: Alignment.Center }) {

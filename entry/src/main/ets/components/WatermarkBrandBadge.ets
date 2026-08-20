@@ -4,13 +4,17 @@ export struct WatermarkBrandBadge {
   @Prop badgeWidth: number = 92;
   @Prop badgeHeight: number = 62;
   @Prop opacityValue: number = 0.78;
+  @Prop labelSizeValue: number = 0;
+  @Prop paddingValue: number = 6;
+  @Prop gapValue: number = 4;
 
   private labelSize(): number {
-    return Math.max(9, Math.min(12, this.iconSize * 0.38));
+    return this.labelSizeValue > 0 ? this.labelSizeValue :
+      Math.max(9, Math.min(12, this.iconSize * 0.38));
   }
 
   build() {
-    Column({ space: 4 }) {
+    Column({ space: this.gapValue }) {
       Image($r('app.media.startIcon'))
         .width(this.iconSize)
         .height(this.iconSize)
@@ -23,7 +27,7 @@ export struct WatermarkBrandBadge {
     }
     .width(this.badgeWidth)
     .height(this.badgeHeight)
-    .padding({ left: 6, right: 6, top: 6, bottom: 6 })
+    .padding(this.paddingValue)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#9E38281F')
