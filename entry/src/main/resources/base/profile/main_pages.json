@@ -6,6 +6,7 @@
     "pages/TextRecognitionPage",
     "pages/CollagePage",
     "pages/AiPlayPage",
+    "pages/FaceSimilarityPage",
     "pages/ResultPage",
     "pages/SettingsPage"
   ]

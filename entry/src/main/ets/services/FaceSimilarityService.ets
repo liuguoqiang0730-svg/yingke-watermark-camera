@@ -41,9 +41,27 @@ export class FaceSimilarityService {
     let firstPixelMap: image.PixelMap | undefined = undefined;
     let secondPixelMap: image.PixelMap | undefined = undefined;
     try {
-      firstPixelMap = await this.decode(firstUri);
-      secondPixelMap = await this.decode(secondUri);
+      firstPixelMap = await this.loadPixelMap(firstUri);
+      secondPixelMap = await this.loadPixelMap(secondUri);
+      return await this.comparePixelMaps(firstPixelMap, secondPixelMap);
+    } finally {
+      await this.releasePixelMap(secondPixelMap);
+      await this.releasePixelMap(firstPixelMap);
+    }
+  }
 
+  async loadPixelMap(uri: string): Promise<image.PixelMap> {
+    try {
+      return await this.decode(uri);
+    } catch (error) {
+      throw new AppError(AppErrorCode.IMAGE_DECODE_FAILED,
+        ErrorMessageUtil.from(error as object, '图片读取失败，请选择其他照片。'));
+    }
+  }
+
+  async comparePixelMaps(firstPixelMap: image.PixelMap,
+    secondPixelMap: image.PixelMap): Promise<FaceSimilarityResult> {
+    try {
       const firstVisionInfo: faceComparator.VisionInfo = {
         pixelMap: firstPixelMap
       };
@@ -55,9 +73,6 @@ export class FaceSimilarityService {
     } catch (error) {
       throw new AppError(AppErrorCode.IMAGE_PROCESS_FAILED,
         ErrorMessageUtil.from(error as object, '识别失败，请确保两张照片中都包含清晰的正面人脸。'));
-    } finally {
-      await this.releasePixelMap(secondPixelMap);
-      await this.releasePixelMap(firstPixelMap);
     }
   }
 
@@ -70,8 +85,14 @@ export class FaceSimilarityService {
     let source: image.ImageSource | undefined = undefined;
     let pixelMap: image.PixelMap | undefined = undefined;
     try {
-      file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
-      source = image.createImageSource(file.fd);
+      try {
+        source = image.createImageSource(uri);
+      } catch (_) {
+      }
+      if (!source) {
+        file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+        source = image.createImageSource(file.fd);
+      }
       if (!source) {
         throw new Error('无法创建图片解码器。');
       }
@@ -148,7 +169,7 @@ export class FaceSimilarityService {
     }
   }
 
-  private async releasePixelMap(pixelMap: image.PixelMap | undefined): Promise<void> {
+  async releasePixelMap(pixelMap: image.PixelMap | undefined): Promise<void> {
     try {
       await pixelMap?.release();
     } catch (_) {
