@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { AppError, AppErrorCode } from '../models/AppError';
 import { WatermarkConfig, WatermarkPosition } from '../models/WatermarkConfig';
+import { WatermarkElementConfig, WatermarkElementType } from '../models/WatermarkTemplate';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 
 class DrawPoint {
@@ -19,21 +20,77 @@ export class ImageComposer {
     config: WatermarkConfig, logoResource: Resource): Promise<image.PixelMap> {
     let logo: image.PixelMap | undefined = undefined;
     let logoSource: image.ImageSource | undefined = undefined;
+    const elementSources: image.ImageSource[] = [];
+    const elementMaps: image.PixelMap[] = [];
     try {
       const info = await source.getImageInfo();
       const canvas = new OffscreenCanvas(info.size.width, info.size.height);
       const drawing = canvas.getContext('2d', new RenderingContextSettings(true));
       drawing.drawImage(source, 0, 0, info.size.width, info.size.height);
 
+      if (config.elements.length > 0 || config.showLogo) {
+        const media = await context.resourceManager.getMediaContent(logoResource.id);
+        logoSource = image.createImageSource(media.buffer as ArrayBuffer);
+        logo = await logoSource.createPixelMap();
+      }
+
+      if (config.elements.length > 0) {
+        for (let index = 0; index < config.elements.length; index++) {
+          const element = config.elements[index];
+          if (!element.visible) {
+            continue;
+          }
+          if (element.type === WatermarkElementType.IMAGE && element.imageUri.length > 0) {
+            const imageSource = image.createImageSource(element.imageUri);
+            const pixelMap = await imageSource.createPixelMap();
+            elementSources.push(imageSource);
+            elementMaps.push(pixelMap);
+            const elementInfo = await pixelMap.getImageInfo();
+            const elementWidth = Math.max(24,
+              Math.round(info.size.width * element.sizePercent / 100 * this.clampScale(element.scaleFactor)));
+            const elementHeight = Math.max(1,
+              Math.round(elementWidth * elementInfo.size.height / Math.max(1, elementInfo.size.width)));
+            const point = this.resolveElementPosition(info.size.width, info.size.height,
+              elementWidth, elementHeight, element);
+            drawing.globalAlpha = this.clamp(element.opacity);
+            drawing.drawImage(pixelMap, point.x, point.y, elementWidth, elementHeight);
+          } else if (element.type === WatermarkElementType.TEXT && element.text.length > 0) {
+            const fontSize = Math.max(24,
+              Math.round(info.size.width * element.sizePercent / 100 * this.clampScale(element.scaleFactor)));
+            drawing.font = `bold ${fontSize}px sans-serif`;
+            const textWidth = Math.ceil(drawing.measureText(element.text).width);
+            const gap = Math.round(fontSize * 0.35);
+            const textHeight = Math.round(fontSize * 1.42);
+            const point = this.resolveElementPosition(info.size.width, info.size.height,
+              textWidth + gap * 2, textHeight, element);
+            drawing.globalAlpha = this.clamp(element.opacity);
+            drawing.fillStyle = '#8A1E1510';
+            drawing.fillRect(point.x, point.y, textWidth + gap * 2, textHeight);
+            drawing.fillStyle = '#FFFFFFFF';
+            drawing.textBaseline = 'top';
+            drawing.fillText(element.text, point.x + gap, point.y + Math.round(gap * 0.35));
+          }
+        }
+        if (logo) {
+          const logoInfo = await logo.getImageInfo();
+          const brandWidth = Math.max(20, Math.round(info.size.width * config.brandSizePercent / 100));
+          const brandHeight = Math.max(1,
+            Math.round(brandWidth * logoInfo.size.height / Math.max(1, logoInfo.size.width)));
+          const margin = Math.max(18, Math.round(Math.min(info.size.width, info.size.height) * 0.025));
+          drawing.globalAlpha = this.clamp(config.brandOpacity);
+          drawing.drawImage(logo, info.size.width - margin - brandWidth,
+            info.size.height - margin - brandHeight, brandWidth, brandHeight);
+        }
+        drawing.globalAlpha = 1;
+        return drawing.getPixelMap(0, 0, info.size.width, info.size.height);
+      }
+
       const scaleFactor = this.clampScale(config.scaleFactor);
       const fontSize = Math.max(24,
         Math.round(info.size.width * config.textSizePercent / 100 * scaleFactor));
       let logoWidth = 0;
       let logoHeight = 0;
-      if (config.showLogo) {
-        const media = await context.resourceManager.getMediaContent(logoResource.id);
-        logoSource = image.createImageSource(media.buffer as ArrayBuffer);
-        logo = await logoSource.createPixelMap();
+      if (logo && config.showLogo) {
         const logoInfo = await logo.getImageInfo();
         logoWidth = Math.round(info.size.width * config.logoSizePercent / 100 * scaleFactor);
         logoHeight = Math.round(logoWidth * logoInfo.size.height / logoInfo.size.width);
@@ -49,7 +106,7 @@ export class ImageComposer {
         groupWidth, groupHeight, config);
 
       drawing.globalAlpha = config.opacity;
-      if (logo) {
+      if (logo && config.showLogo) {
         drawing.drawImage(logo, point.x, point.y, logoWidth, logoHeight);
       }
       if (config.showText && config.text.length > 0) {
@@ -66,9 +123,23 @@ export class ImageComposer {
       throw new AppError(AppErrorCode.IMAGE_PROCESS_FAILED,
         ErrorMessageUtil.from(error as object, '水印合成失败，请重试。'));
     } finally {
+      for (let index = 0; index < elementMaps.length; index++) {
+        await elementMaps[index].release();
+      }
+      for (let index = 0; index < elementSources.length; index++) {
+        await elementSources[index].release();
+      }
       await logo?.release();
       await logoSource?.release();
     }
+  }
+
+  private resolveElementPosition(width: number, height: number, elementWidth: number, elementHeight: number,
+    element: WatermarkElementConfig): DrawPoint {
+    const margin = Math.max(18, Math.round(Math.min(width, height) * 0.025));
+    return new DrawPoint(
+      margin + this.clamp(element.positionX) * Math.max(0, width - elementWidth - margin * 2),
+      margin + this.clamp(element.positionY) * Math.max(0, height - elementHeight - margin * 2));
   }
 
   private resolvePosition(width: number, height: number, groupWidth: number, groupHeight: number,

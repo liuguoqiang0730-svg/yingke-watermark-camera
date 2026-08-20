@@ -1,15 +1,35 @@
 import { common } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { APP_BACKGROUND_EVENT, APP_FOREGROUND_EVENT } from '../common/constants/AppEvent';
-import { CAMERA_PERMISSION, PermissionManager } from '../common/permission/PermissionManager';
-import { DraggableWatermarkOverlay } from '../components/DraggableWatermarkOverlay';
+import {
+  APPROXIMATE_LOCATION_PERMISSION,
+  CAMERA_PERMISSION,
+  PermissionManager
+} from '../common/permission/PermissionManager';
+import { WatermarkElementOverlay } from '../components/WatermarkElementOverlay';
 import { PermissionGuide } from '../components/PermissionGuide';
 import { PermissionState } from '../models/PermissionState';
+import {
+  cloneWatermarkElement,
+  createDefaultWatermarkTemplate,
+  createMinimalDateWatermarkTemplate,
+  createTimeLocationWatermarkTemplate,
+  WatermarkElementConfig,
+  WatermarkElementType,
+  WatermarkPreset,
+  WatermarkTemplateConfig
+} from '../models/WatermarkTemplate';
+import { SettingsRepository } from '../services/SettingsRepository';
+import { WatermarkLocationInfo, WatermarkLocationService } from '../services/WatermarkLocationService';
 import { CameraViewModel } from '../viewmodels/CameraViewModel';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 import { AppLogger } from '../utils/AppLogger';
 
 const TAG: string = 'CameraPage';
+
+class CameraParams {
+  watermarkPreset?: WatermarkPreset;
+}
 
 @Entry
 @Component
@@ -33,9 +53,18 @@ struct CameraPage {
   @State private showLogo: boolean = true;
   @State private positionX: number = 0.78;
   @State private positionY: number = 0.62;
+  @State private watermarkElements: WatermarkElementConfig[] = [];
+  @State private selectedWatermarkId: string = '';
+  @State private brandSizePercent: number = 2.8;
+  @State private brandOpacity: number = 0.78;
+  private selectedPreset: WatermarkPreset = WatermarkPreset.TIME_LOCATION;
+  private locationText: string = '正在获取位置…';
+  private coordinateText: string = '正在获取经纬度…';
 
   private readonly controller: XComponentController = new XComponentController();
   private readonly viewModel: CameraViewModel = new CameraViewModel();
+  private readonly settingsRepository: SettingsRepository = new SettingsRepository();
+  private readonly locationService: WatermarkLocationService = new WatermarkLocationService();
   private readonly abilityContext: common.UIAbilityContext =
     this.getUIContext().getHostContext() as common.UIAbilityContext;
   private surfaceId: string = '';
@@ -49,9 +78,110 @@ struct CameraPage {
 
   aboutToAppear(): void {
     this.setImmersive(true);
+    this.selectedPreset = this.resolveWatermarkPreset();
+    this.loadWatermarkPreset();
     this.abilityContext.eventHub.on(APP_FOREGROUND_EVENT, this.foregroundCallback);
     this.abilityContext.eventHub.on(APP_BACKGROUND_EVENT, this.backgroundCallback);
     this.checkAndRequestPermission();
+  }
+
+  private resolveWatermarkPreset(): WatermarkPreset {
+    const params = this.getUIContext().getRouter().getParams() as CameraParams;
+    if (params?.watermarkPreset === WatermarkPreset.MINIMAL_DATE) {
+      return WatermarkPreset.MINIMAL_DATE;
+    }
+    if (params?.watermarkPreset === WatermarkPreset.CUSTOM) {
+      return WatermarkPreset.CUSTOM;
+    }
+    return WatermarkPreset.TIME_LOCATION;
+  }
+
+  private loadWatermarkPreset(): void {
+    if (this.selectedPreset === WatermarkPreset.CUSTOM) {
+      this.loadCustomWatermark();
+      return;
+    }
+    const template = this.selectedPreset === WatermarkPreset.MINIMAL_DATE ?
+      createMinimalDateWatermarkTemplate(new Date()) :
+      createTimeLocationWatermarkTemplate(new Date(), this.locationText, this.coordinateText);
+    this.applyTemplate(template);
+  }
+
+  private loadCustomWatermark(): void {
+    try {
+      const settings = this.settingsRepository.load(this.abilityContext);
+      this.applyTemplate(settings.template);
+    } catch (error) {
+      AppLogger.warn(TAG, `读取默认水印设置失败：${JSON.stringify(error)}`);
+      this.applyTemplate(createDefaultWatermarkTemplate());
+    }
+  }
+
+  private applyTemplate(template: WatermarkTemplateConfig): void {
+    this.watermarkElements = template.elements.map((item: WatermarkElementConfig) =>
+      cloneWatermarkElement(item));
+    this.brandSizePercent = template.brandSizePercent;
+    this.brandOpacity = template.brandOpacity;
+    this.selectedWatermarkId = this.watermarkElements.length > 0 ? this.watermarkElements[0].id : '';
+    const firstText = this.watermarkElements.find(
+      (item: WatermarkElementConfig) => item.type === WatermarkElementType.TEXT);
+    if (firstText) {
+      this.watermarkText = firstText.text;
+      this.showText = firstText.visible;
+      this.watermarkOpacity = Math.round(firstText.opacity * 100);
+      this.textSize = firstText.sizePercent;
+      this.watermarkScale = firstText.scaleFactor;
+      this.positionX = firstText.positionX;
+      this.positionY = firstText.positionY;
+    }
+    this.showLogo = true;
+  }
+
+  private refreshDynamicWatermark(): void {
+    if (this.selectedPreset === WatermarkPreset.CUSTOM) {
+      return;
+    }
+    const template = this.selectedPreset === WatermarkPreset.MINIMAL_DATE ?
+      createMinimalDateWatermarkTemplate(new Date()) :
+      createTimeLocationWatermarkTemplate(new Date(), this.locationText, this.coordinateText);
+    this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) => {
+      const dynamicElement = template.elements.find(
+        (candidate: WatermarkElementConfig) => candidate.id === item.id);
+      if (!dynamicElement) {
+        return item;
+      }
+      const updated = cloneWatermarkElement(item);
+      updated.text = dynamicElement.text;
+      return updated;
+    });
+    const firstText = this.watermarkElements.find(
+      (item: WatermarkElementConfig) => item.type === WatermarkElementType.TEXT);
+    this.watermarkText = firstText?.text ?? this.watermarkText;
+  }
+
+  private async loadCurrentLocationWatermark(): Promise<void> {
+    let permissionState = PermissionManager.getInstance().checkPermission(
+      this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
+    if (permissionState !== PermissionState.GRANTED) {
+      permissionState = await PermissionManager.getInstance().requestLocationPermissions(this.abilityContext);
+    }
+    if (permissionState !== PermissionState.GRANTED) {
+      this.locationText = '位置未授权';
+      this.coordinateText = '经纬度未授权';
+      this.refreshDynamicWatermark();
+      this.showToast('未获得定位权限，时间水印仍可正常使用');
+      return;
+    }
+    try {
+      const location: WatermarkLocationInfo = await this.locationService.getCurrentLocation();
+      this.locationText = location.locationText;
+      this.coordinateText = location.coordinateText;
+    } catch (error) {
+      this.locationText = '位置未获取';
+      this.coordinateText = '经纬度未获取';
+      AppLogger.warn(TAG, `获取水印位置失败：${JSON.stringify(error)}`);
+    }
+    this.refreshDynamicWatermark();
   }
 
   aboutToDisappear(): void {
@@ -82,6 +212,9 @@ struct CameraPage {
     if (this.permissionState === PermissionState.GRANTED) {
       await this.startCamera();
       await this.setImmersive(true);
+      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+        this.loadCurrentLocationWatermark();
+      }
     } else {
       this.statusText = '未获得相机权限';
     }
@@ -133,6 +266,7 @@ struct CameraPage {
     }
     this.capturing = true;
     this.statusText = '正在拍摄…';
+    this.refreshDynamicWatermark();
     try {
       const uri = await this.viewModel.capture(this.abilityContext);
       await this.viewModel.stop();
@@ -150,7 +284,11 @@ struct CameraPage {
           showText: this.showText,
           showLogo: this.showLogo,
           positionX: this.positionX,
-          positionY: this.positionY
+          positionY: this.positionY,
+          watermarkElements: this.watermarkElements.map((item: WatermarkElementConfig) =>
+            cloneWatermarkElement(item)),
+          brandSizePercent: this.brandSizePercent,
+          brandOpacity: this.brandOpacity
         }
       });
     } catch (error) {
@@ -196,13 +334,106 @@ struct CameraPage {
     }
   }
 
+  private selectedElementIndex(): number {
+    return this.watermarkElements.findIndex(
+      (item: WatermarkElementConfig) => item.id === this.selectedWatermarkId);
+  }
+
+  private selectWatermark(id: string): void {
+    this.selectedWatermarkId = id;
+    const index = this.selectedElementIndex();
+    if (index < 0) {
+      return;
+    }
+    const element = this.watermarkElements[index];
+    this.watermarkText = element.text;
+    this.showText = element.visible;
+    this.watermarkOpacity = Math.round(element.opacity * 100);
+    this.textSize = element.sizePercent;
+    this.watermarkScale = element.scaleFactor;
+    this.positionX = element.positionX;
+    this.positionY = element.positionY;
+  }
+
+  private replaceWatermarkElement(updated: WatermarkElementConfig): void {
+    this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) =>
+      item.id === updated.id ? updated : item);
+  }
+
+  private updateElementPosition(id: string, x: number, y: number): void {
+    const index = this.watermarkElements.findIndex((item: WatermarkElementConfig) => item.id === id);
+    if (index < 0) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.positionX = x;
+    updated.positionY = y;
+    this.replaceWatermarkElement(updated);
+    if (id === this.selectedWatermarkId) {
+      this.positionX = x;
+      this.positionY = y;
+    }
+  }
+
+  private updateElementScale(id: string, scale: number): void {
+    const index = this.watermarkElements.findIndex((item: WatermarkElementConfig) => item.id === id);
+    if (index < 0) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.scaleFactor = scale;
+    this.replaceWatermarkElement(updated);
+    if (id === this.selectedWatermarkId) {
+      this.watermarkScale = scale;
+    }
+  }
+
+  private updateSelectedText(value: string): void {
+    const index = this.selectedElementIndex();
+    this.watermarkText = value;
+    if (index < 0 || this.watermarkElements[index].type !== WatermarkElementType.TEXT) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.text = value;
+    this.replaceWatermarkElement(updated);
+  }
+
+  private updateSelectedOpacity(value: number): void {
+    const index = this.selectedElementIndex();
+    this.watermarkOpacity = value;
+    if (index < 0) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.opacity = value / 100;
+    this.replaceWatermarkElement(updated);
+  }
+
+  private updateSelectedSize(value: number): void {
+    const index = this.selectedElementIndex();
+    this.textSize = value;
+    if (index < 0) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.sizePercent = value;
+    this.replaceWatermarkElement(updated);
+  }
+
   private updatePosition(x: number, y: number): void {
     this.positionX = x;
     this.positionY = y;
+    if (this.selectedWatermarkId.length > 0) {
+      this.updateElementPosition(this.selectedWatermarkId, x, y);
+    }
   }
 
   private updateScale(scale: number): void {
     this.watermarkScale = scale;
+    if (this.selectedWatermarkId.length > 0) {
+      this.updateElementScale(this.selectedWatermarkId, scale);
+    }
   }
 
   private watermarkMargin(): number {
@@ -217,26 +448,40 @@ struct CameraPage {
     return Math.max(1, this.viewportHeight - this.watermarkMargin() * 2);
   }
 
+  private previewElementSize(element: WatermarkElementConfig): number {
+    const value = this.viewportWidth * element.sizePercent / 100;
+    return element.type === WatermarkElementType.IMAGE ? Math.max(26, value) : Math.max(13, value);
+  }
+
+  private elementRenderKey(element: WatermarkElementConfig): string {
+    return element.id + '_' + element.type + '_' + element.text + '_' + element.imageUri + '_' +
+      element.visible + '_' + element.positionX + '_' + element.positionY + '_' + element.scaleFactor + '_' +
+      element.opacity + '_' + element.sizePercent;
+  }
+
+  private brandDisplaySize(): number {
+    return Math.max(22, this.viewportWidth * this.brandSizePercent / 100);
+  }
+
   private isWide(): boolean {
     return this.viewportWidth >= 700;
   }
 
   private toggleText(value: boolean): void {
-    if (!value && !this.showLogo) {
-      this.showToast('文字和 Logo 至少保留一种。');
-      return;
-    }
+    const index = this.selectedElementIndex();
     this.showText = value;
-  }
-
-  private toggleLogo(value: boolean): void {
-    if (!value && !this.showText) {
-      this.showToast('文字和 Logo 至少保留一种。');
+    if (index < 0 || this.watermarkElements[index].type !== WatermarkElementType.TEXT) {
       return;
     }
-    this.showLogo = value;
+    const updated = cloneWatermarkElement(this.watermarkElements[index]);
+    updated.visible = value;
+    this.replaceWatermarkElement(updated);
   }
 
+  private toggleLogo(_value: boolean): void {
+    this.showLogo = true;
+    this.showToast('映刻标识会以小尺寸始终显示');
+  }
   private showToast(message: string): void {
     try {
       this.getUIContext().getPromptAction().showToast({ message: message });
@@ -286,7 +531,7 @@ struct CameraPage {
                 .fontColor('#5A3829').width('100%')
               TextInput({ text: this.watermarkText, placeholder: '输入水印文字' })
                 .width('100%').height(46).maxLength(40).backgroundColor('#FFF8F1')
-                .onChange((value: string) => this.watermarkText = value)
+                .onChange((value: string) => this.updateSelectedText(value))
             }.width('100%')
 
             Row() {
@@ -297,29 +542,23 @@ struct CameraPage {
 
             Row() {
               Text('Logo 水印').fontSize(15).fontColor('#4A3025').layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.showLogo })
-                .onChange((value: boolean) => this.toggleLogo(value))
+              Text('始终显示').fontSize(11).fontColor('#B45A31')
+                .padding({ left: 9, right: 9, top: 5, bottom: 5 })
+                .backgroundColor('#FFE9D7').borderRadius(12)
             }.width('100%')
 
             Column({ space: 6 }) {
               Text(`透明度 ${Math.round(this.watermarkOpacity)}%`).fontSize(14)
                 .fontColor('#5A3829').width('100%')
               Slider({ value: this.watermarkOpacity, min: 20, max: 100, step: 5 })
-                .selectedColor('#E96832').onChange((value: number) => this.watermarkOpacity = value)
+                .selectedColor('#E96832').onChange((value: number) => this.updateSelectedOpacity(value))
             }.width('100%')
 
             Column({ space: 6 }) {
               Text(`文字大小 ${this.textSize.toFixed(1)}%`).fontSize(14)
                 .fontColor('#5A3829').width('100%')
               Slider({ value: this.textSize, min: 2, max: 8, step: 0.5 })
-                .selectedColor('#E96832').onChange((value: number) => this.textSize = value)
-            }.width('100%')
-
-            Column({ space: 6 }) {
-              Text(`Logo 大小 ${Math.round(this.logoSize)}%`).fontSize(14)
-                .fontColor('#5A3829').width('100%')
-              Slider({ value: this.logoSize, min: 3, max: 12, step: 1 })
-                .selectedColor('#E96832').onChange((value: number) => this.logoSize = value)
+                .selectedColor('#E96832').onChange((value: number) => this.updateSelectedSize(value))
             }.width('100%')
 
             Column({ space: 6 }) {
@@ -418,26 +657,42 @@ struct CameraPage {
       }.width('100%').height('100%')
 
       if (this.permissionState === PermissionState.GRANTED) {
-        DraggableWatermarkOverlay({
-          text: this.watermarkText,
-          showText: this.showText,
-          showLogo: this.showLogo,
-          watermarkOpacity: this.watermarkOpacity / 100,
-          textSize: Math.max(13, this.viewportWidth * this.textSize / 100),
-          logoSize: Math.max(24, this.viewportWidth * this.logoSize / 100),
-          scaleFactor: this.watermarkScale,
-          positionX: this.positionX,
-          positionY: this.positionY,
-          frameX: this.watermarkMargin(),
-          frameY: this.watermarkMargin(),
-          frameWidth: this.watermarkFrameWidth(),
-          frameHeight: this.watermarkFrameHeight(),
-          onPositionChange: (x: number, y: number) => this.updatePosition(x, y),
-          onScaleChange: (scale: number) => this.updateScale(scale),
-          onEditRequest: () => this.showSettings = true
-        })
-      }
-      if (this.showSettings) {
+        ForEach(this.watermarkElements, (element: WatermarkElementConfig) => {
+          if (element.visible) {
+            WatermarkElementOverlay({
+              elementId: element.id,
+              elementType: element.type,
+              text: element.text,
+              imageUri: element.imageUri,
+              opacityValue: element.opacity,
+              sizeValue: this.previewElementSize(element),
+              scaleFactor: element.scaleFactor,
+              positionX: element.positionX,
+              positionY: element.positionY,
+              frameX: this.watermarkMargin(),
+              frameY: this.watermarkMargin(),
+              frameWidth: this.watermarkFrameWidth(),
+              frameHeight: this.watermarkFrameHeight(),
+              selected: element.id === this.selectedWatermarkId,
+              editable: true,
+              onSelect: (id: string) => this.selectWatermark(id),
+              onPositionChange: (id: string, x: number, y: number) => this.updateElementPosition(id, x, y),
+              onScaleChange: (id: string, scale: number) => this.updateElementScale(id, scale),
+              onEditRequest: (id: string) => {
+                this.selectWatermark(id);
+                this.showSettings = true;
+              }
+            })
+          }
+        }, (element: WatermarkElementConfig) => this.elementRenderKey(element))
+        Image($r('app.media.startIcon'))
+          .width(this.brandDisplaySize()).height(this.brandDisplaySize())
+          .borderRadius(this.brandDisplaySize() * 0.22).opacity(this.brandOpacity)
+          .position({
+            x: Math.max(12, this.viewportWidth - this.brandDisplaySize() - 18),
+            y: Math.max(12, this.viewportHeight - this.brandDisplaySize() - 18)
+          })
+      }      if (this.showSettings) {
         this.settingsPanel()
       }
 

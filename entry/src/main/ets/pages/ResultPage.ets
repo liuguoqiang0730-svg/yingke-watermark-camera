@@ -3,6 +3,7 @@ import { window } from '@kit.ArkUI';
 import { DraggableWatermarkOverlay } from '../components/DraggableWatermarkOverlay';
 import { ProcessingProgress } from '../components/ProcessingProgress';
 import { WatermarkConfig, WatermarkPosition } from '../models/WatermarkConfig';
+import { cloneWatermarkElement, WatermarkElementConfig } from '../models/WatermarkTemplate';
 import { PreviewImageResult, ResultViewModel } from '../viewmodels/ResultViewModel';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 import { AppLogger } from '../utils/AppLogger';
@@ -25,6 +26,9 @@ class ResultParams {
   plainResult?: boolean;
   cleanupSource?: boolean;
   resultTitle?: string;
+  watermarkElements?: WatermarkElementConfig[];
+  brandSizePercent?: number;
+  brandOpacity?: number;
 }
 
 @Entry
@@ -44,6 +48,9 @@ struct ResultPage {
   @State private showLogo: boolean = true;
   @State private positionX: number = 0.82;
   @State private positionY: number = 0.76;
+  @State private watermarkElements: WatermarkElementConfig[] = [];
+  @State private brandSizePercent: number = 2.8;
+  @State private brandOpacity: number = 0.78;
   @State private resultOnly: boolean = false;
   @State private plainResult: boolean = false;
   @State private cleanupSource: boolean = false;
@@ -140,6 +147,16 @@ struct ResultPage {
     if (params.positionY !== undefined) {
       this.positionY = params.positionY;
     }
+    if (params.watermarkElements !== undefined) {
+      this.watermarkElements = params.watermarkElements.map((item: WatermarkElementConfig) =>
+        cloneWatermarkElement(item));
+    }
+    if (params.brandSizePercent !== undefined) {
+      this.brandSizePercent = params.brandSizePercent;
+    }
+    if (params.brandOpacity !== undefined) {
+      this.brandOpacity = params.brandOpacity;
+    }
   }
 
   private createConfig(): WatermarkConfig {
@@ -154,6 +171,9 @@ struct ResultPage {
     config.scaleFactor = this.watermarkScale;
     config.showText = this.showText;
     config.showLogo = this.showLogo;
+    config.elements = this.watermarkElements.map((item: WatermarkElementConfig) => cloneWatermarkElement(item));
+    config.brandSizePercent = this.brandSizePercent;
+    config.brandOpacity = this.brandOpacity;
     return config;
   }
 

@@ -1,3 +1,5 @@
+import { WatermarkElementConfig } from './WatermarkTemplate';
+
 export enum WatermarkPosition {
   TOP_LEFT = 'top_left',
   TOP_RIGHT = 'top_right',
@@ -18,4 +20,7 @@ export class WatermarkConfig {
   showLogo: boolean = true;
   positionX: number = 0.82;
   positionY: number = 0.76;
+  elements: WatermarkElementConfig[] = [];
+  brandSizePercent: number = 2.8;
+  brandOpacity: number = 0.78;
 }
