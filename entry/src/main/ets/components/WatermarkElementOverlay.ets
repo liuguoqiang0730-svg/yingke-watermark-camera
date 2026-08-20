@@ -161,6 +161,8 @@ export struct WatermarkElementOverlay {
       radius: 10
     })
     .position({ x: this.currentX(), y: this.currentY() })
+    .zIndex(10)
+    .hitTestBehavior(HitTestMode.Block)
     .onAreaChange((_oldValue, newValue) => {
       this.contentWidth = Number(newValue.width);
       this.contentHeight = Number(newValue.height);

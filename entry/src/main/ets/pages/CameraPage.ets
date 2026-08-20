@@ -647,7 +647,7 @@ struct CameraPage {
       .width(this.isWide() ? 390 : '92%').height('100%')
       .backgroundColor('#FFFFFBF7')
       .shadow({ radius: 24, color: '#44000000', offsetX: -8 })
-    }.width('100%').height('100%')
+    }.width('100%').height('100%').zIndex(20)
   }
 
   build() {
@@ -714,6 +714,7 @@ struct CameraPage {
         }.width('100%').justifyContent(FlexAlign.Center)
           .padding({ left: 30, right: 30, bottom: 26 })
       }.width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
 
       if (this.permissionState === PermissionState.GRANTED) {
         ForEach(this.watermarkElements, (element: WatermarkElementConfig) => {
