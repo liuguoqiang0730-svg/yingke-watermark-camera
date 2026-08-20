@@ -17,6 +17,7 @@ struct CollagePage {
   @State private processing: boolean = false;
   @State private viewportWidth: number = 0;
   @State private errorMessage: string = '';
+  @State private selectedPhotoIndex: number = 0;
 
   private readonly viewModel: CollageViewModel = new CollageViewModel();
   private readonly abilityContext: common.UIAbilityContext =
@@ -40,6 +41,7 @@ struct CollagePage {
     this.errorMessage = '';
     try {
       this.photoUris = await this.viewModel.selectPhotos(9);
+      this.selectedPhotoIndex = 0;
     } catch (error) {
       const appError = error as AppError;
       if (appError.code !== AppErrorCode.USER_CANCELLED) {
@@ -60,6 +62,19 @@ struct CollagePage {
     next[index] = next[target];
     next[target] = current;
     this.photoUris = next;
+    this.selectedPhotoIndex = target;
+  }
+
+  private movePhotoTo(index: number, target: number): void {
+    if (index < 0 || index >= this.photoUris.length || target < 0 ||
+      target >= this.photoUris.length || index === target) {
+      return;
+    }
+    const next = this.photoUris.slice();
+    const moving = next.splice(index, 1)[0];
+    next.splice(target, 0, moving);
+    this.photoUris = next;
+    this.selectedPhotoIndex = target;
   }
 
   private removePhoto(index: number): void {
@@ -70,6 +85,13 @@ struct CollagePage {
       }
     });
     this.photoUris = next;
+    if (next.length === 0) {
+      this.selectedPhotoIndex = 0;
+    } else if (this.selectedPhotoIndex > index) {
+      this.selectedPhotoIndex--;
+    } else if (this.selectedPhotoIndex >= next.length) {
+      this.selectedPhotoIndex = next.length - 1;
+    }
   }
 
   private createConfig(): CollageConfig {
@@ -148,21 +170,18 @@ struct CollagePage {
   private photoItem(uri: string, index: number) {
     Stack({ alignContent: Alignment.TopEnd }) {
       Image(uri).width(112).height(112).objectFit(ImageFit.Cover).borderRadius(16)
+        .onClick(() => this.selectedPhotoIndex = index)
       Text(`${index + 1}`).width(28).height(28).textAlign(TextAlign.Center)
         .fontSize(12).fontWeight(FontWeight.Bold).fontColor(Color.White)
         .backgroundColor('#AA000000').borderRadius({ topRight: 16, bottomLeft: 12 })
-      Row({ space: 4 }) {
-        Button('←').width(30).height(30).fontSize(13).type(ButtonType.Normal)
-          .enabled(index > 0).fontColor('#5A3829').backgroundColor('#EEFFFFFF')
-          .onClick(() => this.movePhoto(index, -1))
-        Button('→').width(30).height(30).fontSize(13).type(ButtonType.Normal)
-          .enabled(index < this.photoUris.length - 1).fontColor('#5A3829').backgroundColor('#EEFFFFFF')
-          .onClick(() => this.movePhoto(index, 1))
-        Button('×').width(30).height(30).fontSize(16).type(ButtonType.Normal)
-          .fontColor('#B42318').backgroundColor('#EEFFFFFF')
-          .onClick(() => this.removePhoto(index))
-      }.position({ x: 8, y: 74 })
-    }.width(112).height(112)
+      Button('×').width(30).height(30).fontSize(16).type(ButtonType.Normal)
+        .fontColor('#B42318').backgroundColor('#EEFFFFFF')
+        .position({ x: 74, y: 74 }).onClick(() => this.removePhoto(index))
+    }
+    .width(112).height(112)
+    .border({ width: this.selectedPhotoIndex === index ? 3 : 0,
+      color: this.selectedPhotoIndex === index ? '#E96832' : Color.Transparent })
+    .borderRadius(18)
   }
 
   @Builder
@@ -172,7 +191,7 @@ struct CollagePage {
         Column({ space: 3 }) {
           Text(`已选 ${this.photoUris.length}/9 张`).fontSize(18)
             .fontWeight(FontWeight.Bold).fontColor('#3B2117')
-          Text('使用箭头调整图片顺序').fontSize(12).fontColor('#9A725C')
+          Text('所有布局均按下方编号顺序生成').fontSize(12).fontColor('#9A725C')
         }.alignItems(HorizontalAlign.Start).layoutWeight(1)
         Button(this.selecting ? '正在打开…' : '重新选择').height(38).type(ButtonType.Normal)
           .enabled(!this.selecting && !this.processing).fontSize(13).fontColor('#E96832')
@@ -186,6 +205,29 @@ struct CollagePage {
           }
         }, (uri: string, index: number) => `${uri}_${index}`)
       }.width('100%').height(124).listDirection(Axis.Horizontal).scrollBar(BarState.Off)
+
+      Column({ space: 8 }) {
+        Text(`正在调整第 ${this.selectedPhotoIndex + 1} 张 · 点击缩略图可切换`)
+          .fontSize(12).fontColor('#795746').width('100%')
+        Row({ space: 6 }) {
+          Button('移到最前').layoutWeight(1).height(38).type(ButtonType.Normal)
+            .fontSize(11).enabled(this.selectedPhotoIndex > 0)
+            .fontColor('#5A3829').backgroundColor('#FFF0E3')
+            .onClick(() => this.movePhotoTo(this.selectedPhotoIndex, 0))
+          Button('前移').layoutWeight(1).height(38).type(ButtonType.Normal)
+            .fontSize(11).enabled(this.selectedPhotoIndex > 0)
+            .fontColor('#5A3829').backgroundColor('#FFF0E3')
+            .onClick(() => this.movePhoto(this.selectedPhotoIndex, -1))
+          Button('后移').layoutWeight(1).height(38).type(ButtonType.Normal)
+            .fontSize(11).enabled(this.selectedPhotoIndex < this.photoUris.length - 1)
+            .fontColor('#5A3829').backgroundColor('#FFF0E3')
+            .onClick(() => this.movePhoto(this.selectedPhotoIndex, 1))
+          Button('移到最后').layoutWeight(1).height(38).type(ButtonType.Normal)
+            .fontSize(11).enabled(this.selectedPhotoIndex < this.photoUris.length - 1)
+            .fontColor('#5A3829').backgroundColor('#FFF0E3')
+            .onClick(() => this.movePhotoTo(this.selectedPhotoIndex, this.photoUris.length - 1))
+        }.width('100%')
+      }.width('100%').padding(10).backgroundColor('#FFF8F1').borderRadius(14)
 
       Column({ space: 10 }) {
         Text('拼接布局').fontSize(15).fontWeight(FontWeight.Bold)

@@ -135,19 +135,23 @@ export class CollageComposer {
   private createGridPlan(count: number, spacing: number): CollagePlan {
     const columns = count <= 4 ? 2 : 3;
     const rows = Math.ceil(count / columns);
+    const innerWidth = columns * GRID_CELL_SIZE + (columns - 1) * spacing;
     const slots: CollageSlot[] = [];
-    for (let index = 0; index < count; index++) {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      slots.push(new CollageSlot(
-        spacing + column * (GRID_CELL_SIZE + spacing),
-        spacing + row * (GRID_CELL_SIZE + spacing),
-        GRID_CELL_SIZE,
-        GRID_CELL_SIZE,
-        true));
+    for (let row = 0; row < rows; row++) {
+      const rowStart = row * columns;
+      const itemsInRow = Math.min(columns, count - rowStart);
+      const cellWidth = (innerWidth - (itemsInRow - 1) * spacing) / itemsInRow;
+      for (let column = 0; column < itemsInRow; column++) {
+        slots.push(new CollageSlot(
+          Math.round(spacing + column * (cellWidth + spacing)),
+          spacing + row * (GRID_CELL_SIZE + spacing),
+          Math.round(cellWidth),
+          GRID_CELL_SIZE,
+          true));
+      }
     }
     return new CollagePlan(
-      columns * GRID_CELL_SIZE + (columns + 1) * spacing,
+      innerWidth + spacing * 2,
       rows * GRID_CELL_SIZE + (rows + 1) * spacing,
       slots);
   }
