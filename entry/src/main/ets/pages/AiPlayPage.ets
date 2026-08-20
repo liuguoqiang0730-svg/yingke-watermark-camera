@@ -9,6 +9,13 @@ struct AiPlayPage {
     return this.currentBreakpoint === 'md';
   }
 
+  private topPadding(): number {
+    if (this.isExpanded()) {
+      return 28;
+    }
+    return this.currentBreakpoint === 'sm' ? 76 : 24;
+  }
+
   private switchModule(module: HomeModule): void {
     if (module === HomeModule.AI) {
       return;
@@ -112,7 +119,7 @@ struct AiPlayPage {
         .padding({
           left: this.isExpanded() ? 40 : 16,
           right: this.isExpanded() ? 40 : 16,
-          top: this.isExpanded() ? 28 : 24,
+          top: this.topPadding(),
           bottom: 28
         })
       }.width('100%').layoutWeight(1).align(Alignment.TopStart)
