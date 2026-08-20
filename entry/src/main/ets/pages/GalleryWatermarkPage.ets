@@ -129,7 +129,7 @@ struct GalleryWatermarkPage {
       item.type === WatermarkElementType.TEXT && item.visible);
   }
 
-  private continueEditing(): void {
+  private openFinalResult(): void {
     if (!this.sourceUri) {
       this.showToast('请先导入一张图片');
       return;
@@ -140,7 +140,7 @@ struct GalleryWatermarkPage {
       url: 'pages/ResultPage',
       params: {
         sourceUri: this.sourceUri,
-        resultOnly: false,
+        resultOnly: true,
         resultTitle: '相册加水印',
         watermarkText: firstText ? firstText.text : '',
         watermarkOpacity: firstText ? Math.round(firstText.opacity * 100) : 88,
@@ -157,7 +157,7 @@ struct GalleryWatermarkPage {
         }
       });
     } catch (_) {
-      this.showToast('暂时无法打开水印编辑');
+      this.showToast('暂时无法生成成品图');
     }
   }
 
@@ -336,7 +336,7 @@ struct GalleryWatermarkPage {
             Row() {
               Text('选择水印设计').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#3B2117')
               Blank()
-              Text('下一步仍可编辑').fontSize(12).fontColor('#A07A63')
+              Text('下一步生成成品图').fontSize(12).fontColor('#A07A63')
             }.width('100%')
             Row({ space: 10 }) {
               this.presetCard(WatermarkPreset.TIME_LOCATION, '●', '时间地点',
@@ -357,7 +357,7 @@ struct GalleryWatermarkPage {
             .fontSize(17).fontWeight(FontWeight.Bold).fontColor(Color.White)
             .backgroundColor(this.sourceUri && !this.requestingLocation ? '#E96832' : '#D9B8A5')
             .borderRadius(27).enabled(!!this.sourceUri && !this.requestingLocation)
-            .onClick(() => this.continueEditing())
+            .onClick(() => this.openFinalResult())
           Text('图片与水印处理均在本机完成').fontSize(12).fontColor('#A07A63')
         }
         .width('100%').constraintSize({ maxWidth: 980 })
