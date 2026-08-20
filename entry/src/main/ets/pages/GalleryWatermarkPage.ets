@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { WatermarkElementOverlay } from '../components/WatermarkElementOverlay';
 import {
   APPROXIMATE_LOCATION_PERMISSION,
   PermissionManager
@@ -8,6 +9,7 @@ import { AppError, AppErrorCode } from '../models/AppError';
 import { PermissionState } from '../models/PermissionState';
 import {
   cloneWatermarkElement,
+  cloneWatermarkTemplate,
   createDefaultWatermarkTemplate,
   createMinimalDateWatermarkTemplate,
   createTimeLocationWatermarkTemplate,
@@ -33,6 +35,7 @@ struct GalleryWatermarkPage {
   @State private viewportWidth: number = 0;
   @State private previewWidth: number = 0;
   @State private previewHeight: number = 0;
+  @State private selectedWatermarkId: string = '';
 
   private readonly mediaService: MediaService = new MediaService();
   private readonly settingsRepository: SettingsRepository = new SettingsRepository();
@@ -159,17 +162,30 @@ struct GalleryWatermarkPage {
     }
   }
 
-  private elementSize(element: WatermarkElementConfig): number {
-    const base = this.previewWidth * element.sizePercent / 100 * element.scaleFactor;
+  private previewElementSize(element: WatermarkElementConfig): number {
+    const base = this.previewWidth * element.sizePercent / 100;
     return Math.max(element.type === WatermarkElementType.IMAGE ? 22 : 12, base);
   }
 
-  private elementX(element: WatermarkElementConfig): number {
-    return 16 + element.positionX * Math.max(1, this.previewWidth - 152);
+  private updateElementPosition(id: string, x: number, y: number): void {
+    const updated = cloneWatermarkTemplate(this.template);
+    const element = updated.elements.find((item: WatermarkElementConfig) => item.id === id);
+    if (!element) {
+      return;
+    }
+    element.positionX = x;
+    element.positionY = y;
+    this.template = updated;
   }
 
-  private elementY(element: WatermarkElementConfig): number {
-    return 16 + element.positionY * Math.max(1, this.previewHeight - 84);
+  private updateElementScale(id: string, scale: number): void {
+    const updated = cloneWatermarkTemplate(this.template);
+    const element = updated.elements.find((item: WatermarkElementConfig) => item.id === id);
+    if (!element) {
+      return;
+    }
+    element.scaleFactor = scale;
+    this.template = updated;
   }
 
   @Builder
@@ -191,39 +207,34 @@ struct GalleryWatermarkPage {
   }
 
   @Builder
-  private watermarkElement(element: WatermarkElementConfig) {
-    if (element.type === WatermarkElementType.IMAGE) {
-      if (element.imageUri) {
-        Image(element.imageUri)
-          .width(this.elementSize(element)).height(this.elementSize(element))
-          .objectFit(ImageFit.Contain).borderRadius(6).opacity(element.opacity)
-          .position({ x: this.elementX(element), y: this.elementY(element) })
-      } else {
-        Text('图').fontSize(12).fontColor(Color.White)
-          .width(this.elementSize(element)).height(this.elementSize(element))
-          .textAlign(TextAlign.Center).backgroundColor('#99000000').borderRadius(6)
-          .position({ x: this.elementX(element), y: this.elementY(element) })
-      }
-    } else {
-      Text(element.text).fontSize(this.elementSize(element)).fontWeight(FontWeight.Bold)
-        .fontColor(Color.White).maxLines(5)
-        .constraintSize({ maxWidth: Math.max(120, this.previewWidth * 0.68) })
-        .padding({ left: 7, right: 7, top: 4, bottom: 4 })
-        .backgroundColor('#8A1E1510').borderRadius(6)
-        .textShadow({ radius: 2, color: '#66000000', offsetY: 1 })
-        .opacity(element.opacity)
-        .position({ x: this.elementX(element), y: this.elementY(element) })
-    }
-  }
-
-  @Builder
   private previewCard() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.sourceUri) {
         Image(this.sourceUri).width('100%').height('100%').objectFit(ImageFit.Contain)
         ForEach(this.template.elements, (element: WatermarkElementConfig) => {
           if (element.visible) {
-            this.watermarkElement(element)
+            WatermarkElementOverlay({
+              elementId: element.id,
+              elementType: element.type,
+              text: element.text,
+              imageUri: element.imageUri,
+              opacityValue: element.opacity,
+              sizeValue: this.previewElementSize(element),
+              scaleFactor: element.scaleFactor,
+              positionX: element.positionX,
+              positionY: element.positionY,
+              frameX: 16,
+              frameY: 16,
+              frameWidth: Math.max(1, this.previewWidth - 32),
+              frameHeight: Math.max(1, this.previewHeight - 32),
+              selected: element.id === this.selectedWatermarkId,
+              editable: true,
+              onSelect: (id: string) => this.selectedWatermarkId = id,
+              onPositionChange: (id: string, x: number, y: number) =>
+                this.updateElementPosition(id, x, y),
+              onScaleChange: (id: string, scale: number) => this.updateElementScale(id, scale),
+              onEditRequest: (id: string) => this.selectedWatermarkId = id
+            })
           }
         }, (element: WatermarkElementConfig) => element.id)
         WatermarkBrandBadge({
@@ -302,7 +313,7 @@ struct GalleryWatermarkPage {
             Row() {
               Column({ space: 3 }) {
                 Text('已导入图片').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#3B2117')
-                Text('可重新选择，不会修改原图').fontSize(12).fontColor('#9A725C')
+                Text('可拖动、缩放水印，也可重新选择图片').fontSize(12).fontColor('#9A725C')
               }.alignItems(HorizontalAlign.Start)
               Blank()
               Button(this.selecting ? '正在打开…' : '重新选图')
