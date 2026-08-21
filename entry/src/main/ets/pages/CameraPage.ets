@@ -44,6 +44,8 @@ struct CameraPage {
   @State private switching: boolean = false;
   @State private viewportWidth: number = 0;
   @State private viewportHeight: number = 0;
+  @State private photoOutputWidth: number = 0;
+  @State private photoOutputHeight: number = 0;
   @State private showSettings: boolean = false;
   @State private watermarkText: string = '映刻 · 记录此刻';
   @State private watermarkOpacity: number = 80;
@@ -180,7 +182,22 @@ struct CameraPage {
   private async runCurrentLocationWatermarkTask(): Promise<void> {
     try {
       await this.resolveCurrentLocationWatermark();
+    } catch (error) {
+      this.locationText = '位置未获取';
+      this.coordinateText = '经纬度未获取';
+      AppLogger.warn(TAG, '定位任务异常结束：' + JSON.stringify(error));
     } finally {
+      if (this.locationText === '正在获取位置…') {
+        this.locationText = '位置未获取';
+      }
+      if (this.coordinateText === '正在获取经纬度…') {
+        this.coordinateText = '经纬度未获取';
+      }
+      this.refreshDynamicWatermark();
+      if (this.ready && (this.statusText === '正在获取位置信息…' ||
+        this.statusText === '正在获取拍摄位置…' || this.statusText === '地点水印需要定位权限')) {
+        this.statusText = '';
+      }
       this.locationTask = undefined;
     }
   }
@@ -216,6 +233,12 @@ struct CameraPage {
         this.statusText = '';
       }
       return;
+    }
+    this.locationText = '正在获取位置…';
+    this.coordinateText = '正在获取经纬度…';
+    this.refreshDynamicWatermark();
+    if (this.ready) {
+      this.statusText = '正在获取位置信息…';
     }
     try {
       const location: WatermarkLocationInfo = await this.locationService.getCurrentLocation();
@@ -283,6 +306,9 @@ struct CameraPage {
     this.statusText = '正在启动相机…';
     try {
       await this.viewModel.start(this.abilityContext, this.surfaceId);
+      const photoSize = this.viewModel.getPhotoOutputSize();
+      this.photoOutputWidth = photoSize.width;
+      this.photoOutputHeight = photoSize.height;
       this.ready = true;
       this.flashAvailable = this.viewModel.hasFlash();
       this.statusText = '';
@@ -490,37 +516,137 @@ struct CameraPage {
     }
   }
 
+  private orientedPhotoWidth(): number {
+    if (this.photoOutputWidth <= 0 || this.photoOutputHeight <= 0) {
+      return Math.max(1, this.viewportWidth);
+    }
+    const viewportLandscape = this.viewportWidth >= this.viewportHeight;
+    const photoLandscape = this.photoOutputWidth >= this.photoOutputHeight;
+    return viewportLandscape === photoLandscape ? this.photoOutputWidth : this.photoOutputHeight;
+  }
+
+  private orientedPhotoHeight(): number {
+    if (this.photoOutputWidth <= 0 || this.photoOutputHeight <= 0) {
+      return Math.max(1, this.viewportHeight);
+    }
+    const viewportLandscape = this.viewportWidth >= this.viewportHeight;
+    const photoLandscape = this.photoOutputWidth >= this.photoOutputHeight;
+    return viewportLandscape === photoLandscape ? this.photoOutputHeight : this.photoOutputWidth;
+  }
+
+  private exportImageWidth(): number {
+    const width = this.orientedPhotoWidth();
+    const height = this.orientedPhotoHeight();
+    const scale = Math.min(1, 3072 / Math.max(width, height));
+    return Math.max(1, Math.round(width * scale));
+  }
+
+  private exportImageHeight(): number {
+    const width = this.orientedPhotoWidth();
+    const height = this.orientedPhotoHeight();
+    const scale = Math.min(1, 3072 / Math.max(width, height));
+    return Math.max(1, Math.round(height * scale));
+  }
+
+  private previewImageScale(): number {
+    if (this.viewportWidth <= 0 || this.viewportHeight <= 0) {
+      return 1;
+    }
+    return Math.min(this.viewportWidth / this.exportImageWidth(),
+      this.viewportHeight / this.exportImageHeight());
+  }
+
+  private previewImageWidth(): number {
+    return this.exportImageWidth() * this.previewImageScale();
+  }
+
+  private previewImageHeight(): number {
+    return this.exportImageHeight() * this.previewImageScale();
+  }
+
+  private previewImageX(): number {
+    return (this.viewportWidth - this.previewImageWidth()) / 2;
+  }
+
+  private previewImageY(): number {
+    return (this.viewportHeight - this.previewImageHeight()) / 2;
+  }
+
+  private previewToExportScale(): number {
+    return this.previewImageWidth() / this.exportImageWidth();
+  }
+
   private watermarkMargin(): number {
-    return Math.min(this.viewportWidth, this.viewportHeight) * 0.04;
+    const exportMargin = Math.max(18,
+      Math.round(Math.min(this.exportImageWidth(), this.exportImageHeight()) * 0.025));
+    return exportMargin * this.previewToExportScale();
+  }
+
+  private watermarkFrameX(): number {
+    return this.previewImageX() + this.watermarkMargin();
+  }
+
+  private watermarkFrameY(): number {
+    return this.previewImageY() + this.watermarkMargin();
   }
 
   private watermarkFrameWidth(): number {
-    return Math.max(1, this.viewportWidth - this.watermarkMargin() * 2);
+    return Math.max(1, this.previewImageWidth() - this.watermarkMargin() * 2);
   }
 
   private watermarkFrameHeight(): number {
-    return Math.max(1, this.viewportHeight - this.watermarkMargin() * 2);
+    return Math.max(1, this.previewImageHeight() - this.watermarkMargin() * 2);
+  }
+
+  private clampElementScale(scale: number): number {
+    return Math.min(2.5, Math.max(0.5, scale));
   }
 
   private previewElementSize(element: WatermarkElementConfig): number {
-    const value = this.viewportWidth * element.sizePercent / 100;
-    return element.type === WatermarkElementType.IMAGE ? Math.max(26, value) : Math.max(13, value);
+    const scale = this.clampElementScale(element.scaleFactor);
+    const exportSize = Math.max(24,
+      Math.round(this.exportImageWidth() * element.sizePercent / 100 * scale));
+    return exportSize * this.previewToExportScale() / scale;
+  }
+
+  private previewTextMaxWidth(): number {
+    return Math.round(this.exportImageWidth() * 0.68) * this.previewToExportScale();
   }
 
   private elementRenderKey(element: WatermarkElementConfig): string {
-    return element.id;
+    return element.id + ':' + element.type + ':' + element.text + ':' + element.imageUri + ':' +
+      Math.round(this.previewImageWidth()) + 'x' + Math.round(this.previewImageHeight());
   }
 
   private brandDisplaySize(): number {
-    return Math.max(22, this.viewportWidth * this.brandSizePercent / 100);
+    const exportSize = Math.max(20,
+      Math.round(this.exportImageWidth() * this.brandSizePercent / 100));
+    return exportSize * this.previewToExportScale();
+  }
+
+  private brandLabelSize(): number {
+    const exportIconSize = Math.max(20,
+      Math.round(this.exportImageWidth() * this.brandSizePercent / 100));
+    return Math.max(14, Math.round(exportIconSize * 0.38)) * this.previewToExportScale();
+  }
+
+  private brandPadding(): number {
+    const exportLabelSize = this.brandLabelSize() / this.previewToExportScale();
+    return Math.max(7, Math.round(exportLabelSize * 0.32)) * this.previewToExportScale();
+  }
+
+  private brandGap(): number {
+    const exportLabelSize = this.brandLabelSize() / this.previewToExportScale();
+    return Math.max(4, Math.round(exportLabelSize * 0.22)) * this.previewToExportScale();
   }
 
   private brandBadgeWidth(): number {
-    return Math.max(92, this.brandDisplaySize() + 64);
+    return Math.max(this.brandDisplaySize(), this.brandLabelSize() * 6) + this.brandPadding() * 2;
   }
 
   private brandBadgeHeight(): number {
-    return Math.max(62, this.brandDisplaySize() + 36);
+    return this.brandPadding() * 2 + this.brandDisplaySize() +
+      this.brandGap() + this.brandLabelSize() * 1.28;
   }
   private isWide(): boolean {
     return this.viewportWidth >= 700;
@@ -653,7 +779,8 @@ struct CameraPage {
   build() {
     Stack({ alignContent: Alignment.Center }) {
       XComponent({ id: 'cameraPreview', type: XComponentType.SURFACE, controller: this.controller })
-        .width('100%').height('100%')
+        .width(this.previewImageWidth()).height(this.previewImageHeight())
+        .position({ x: this.previewImageX(), y: this.previewImageY() })
         .onLoad(() => {
           this.surfaceId = this.controller.getXComponentSurfaceId();
           if (this.permissionState === PermissionState.GRANTED) {
@@ -729,10 +856,13 @@ struct CameraPage {
               scaleFactor: element.scaleFactor,
               positionX: element.positionX,
               positionY: element.positionY,
-              frameX: this.watermarkMargin(),
-              frameY: this.watermarkMargin(),
+              frameX: this.watermarkFrameX(),
+              frameY: this.watermarkFrameY(),
               frameWidth: this.watermarkFrameWidth(),
               frameHeight: this.watermarkFrameHeight(),
+              textMaxWidthValue: this.previewTextMaxWidth(),
+              textRenderScale: 1 / this.getUIContext().vp2px(1),
+              interactionPadding: 0,
               selected: element.id === this.selectedWatermarkId,
               editable: true,
               onSelect: (id: string) => this.selectWatermark(id),
@@ -749,11 +879,16 @@ struct CameraPage {
           iconSize: this.brandDisplaySize(),
           badgeWidth: this.brandBadgeWidth(),
           badgeHeight: this.brandBadgeHeight(),
+          labelSizeValue: this.brandLabelSize() / this.getUIContext().vp2px(1),
+          paddingValue: this.brandPadding(),
+          gapValue: this.brandGap(),
           opacityValue: this.brandOpacity
         })
         .position({
-          x: Math.max(12, this.viewportWidth - this.brandBadgeWidth() - 18),
-          y: Math.max(12, this.viewportHeight - this.brandBadgeHeight() - 18)
+          x: this.previewImageX() + this.previewImageWidth() -
+            this.watermarkMargin() - this.brandBadgeWidth(),
+          y: this.previewImageY() + this.previewImageHeight() -
+            this.watermarkMargin() - this.brandBadgeHeight()
         })
       }
 

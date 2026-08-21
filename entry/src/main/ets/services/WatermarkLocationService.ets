@@ -8,6 +8,9 @@ export class WatermarkLocationInfo {
 export class WatermarkLocationService {
   private static readonly instance: WatermarkLocationService = new WatermarkLocationService();
   private static readonly CACHE_DURATION_MS: number = 5 * 60 * 1000;
+  private static readonly LOCATION_TIMEOUT_MS: number = 8000;
+  private static readonly LOCATION_GUARD_TIMEOUT_MS: number = 10000;
+  private static readonly ADDRESS_TIMEOUT_MS: number = 3000;
   private cachedInfo?: WatermarkLocationInfo;
   private cachedAt: number = 0;
   private locationTask?: Promise<WatermarkLocationInfo>;
@@ -45,17 +48,69 @@ export class WatermarkLocationService {
   private async resolveCurrentLocation(): Promise<WatermarkLocationInfo> {
     const info = new WatermarkLocationInfo();
     try {
-      const location = await geoLocationManager.getCurrentLocation({
-        priority: geoLocationManager.LocationRequestPriority.ACCURACY,
-        maxAccuracy: 1000
-      });
+      const location = await this.requestCurrentLocation();
       info.coordinateText = `纬度 ${location.latitude.toFixed(6)} · 经度 ${location.longitude.toFixed(6)}`;
-      info.locationText = await this.resolveAddress(location.latitude, location.longitude);
+      info.locationText = await this.resolveAddressWithTimeout(location.latitude, location.longitude);
       this.cachedInfo = this.cloneInfo(info);
       this.cachedAt = Date.now();
     } catch (_) {
     }
     return info;
+  }
+
+  private requestCurrentLocation(): Promise<geoLocationManager.Location> {
+    return new Promise((resolve: (location: geoLocationManager.Location) => void,
+      reject: (reason: Object) => void): void => {
+      let settled = false;
+      const timer = setTimeout((): void => {
+        if (!settled) {
+          settled = true;
+          reject(new Error('定位请求超时'));
+        }
+      }, WatermarkLocationService.LOCATION_GUARD_TIMEOUT_MS);
+      geoLocationManager.getCurrentLocation({
+        priority: geoLocationManager.LocationRequestPriority.FIRST_FIX,
+        maxAccuracy: 1000,
+        timeoutMs: WatermarkLocationService.LOCATION_TIMEOUT_MS
+      }).then((location: geoLocationManager.Location): void => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(location);
+        }
+      }).catch((error: Object): void => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(error);
+        }
+      });
+    });
+  }
+
+  private resolveAddressWithTimeout(latitude: number, longitude: number): Promise<string> {
+    return new Promise((resolve: (address: string) => void): void => {
+      let settled = false;
+      const timer = setTimeout((): void => {
+        if (!settled) {
+          settled = true;
+          resolve('当前位置');
+        }
+      }, WatermarkLocationService.ADDRESS_TIMEOUT_MS);
+      this.resolveAddress(latitude, longitude).then((address: string): void => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(address);
+        }
+      }).catch((): void => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve('当前位置');
+        }
+      });
+    });
   }
 
   private cloneInfo(source: WatermarkLocationInfo): WatermarkLocationInfo {

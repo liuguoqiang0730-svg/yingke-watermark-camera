@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { camera } from '@kit.CameraKit';
-import { CameraService } from '../services/CameraService';
+import { CameraOutputSize, CameraService } from '../services/CameraService';
 import { TempFileManager } from '../services/TempFileManager';
 
 export class CameraViewModel {
@@ -32,5 +32,9 @@ export class CameraViewModel {
 
   hasFlash(): boolean {
     return this.service.canToggleFlash();
+  }
+
+  getPhotoOutputSize(): CameraOutputSize {
+    return this.service.getPhotoOutputSize();
   }
 }

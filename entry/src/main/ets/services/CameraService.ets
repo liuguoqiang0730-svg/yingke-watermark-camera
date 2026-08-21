@@ -9,6 +9,17 @@ import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 
 const TAG: string = 'CameraService';
 const MAX_PHOTO_PIXELS: number = 12000000;
+const MAX_PREVIEW_PIXELS: number = 2073600;
+
+export class CameraOutputSize {
+  width: number;
+  height: number;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
+}
 
 export class CameraService {
   private manager: camera.CameraManager | undefined = undefined;
@@ -22,6 +33,8 @@ export class CameraService {
   private started: boolean = false;
   private deviceDegree: number = 0;
   private displayListenerRegistered: boolean = false;
+  private photoOutputWidth: number = 0;
+  private photoOutputHeight: number = 0;
 
   private readonly photoCallback = (error: BusinessError, photo: camera.Photo): void => {
     this.handlePhoto(error, photo);
@@ -38,8 +51,10 @@ export class CameraService {
       this.manager = camera.getCameraManager(context);
       const device = this.selectCamera(this.manager.getSupportedCameras(), position);
       const capability = this.manager.getSupportedOutputCapability(device, camera.SceneMode.NORMAL_PHOTO);
-      const previewProfile = this.selectPreviewProfile(capability.previewProfiles);
       const photoProfile = this.selectPhotoProfile(capability.photoProfiles);
+      const previewProfile = this.selectPreviewProfile(capability.previewProfiles, photoProfile);
+      this.photoOutputWidth = photoProfile.size.width;
+      this.photoOutputHeight = photoProfile.size.height;
 
       this.input = this.manager.createCameraInput(device);
       await this.input.open();
@@ -118,6 +133,10 @@ export class CameraService {
 
   getPosition(): camera.CameraPosition {
     return this.position;
+  }
+
+  getPhotoOutputSize(): CameraOutputSize {
+    return new CameraOutputSize(this.photoOutputWidth, this.photoOutputHeight);
   }
 
   async release(): Promise<void> {
@@ -239,23 +258,36 @@ export class CameraService {
     return devices[0];
   }
 
-  private selectPreviewProfile(profiles: Array<camera.Profile>): camera.Profile {
+  private selectPreviewProfile(profiles: Array<camera.Profile>, photoProfile: camera.Profile): camera.Profile {
     if (profiles.length === 0) {
       throw new AppError(AppErrorCode.CAMERA_UNAVAILABLE, '设备没有可用的相机预览规格。');
     }
     let selected = profiles[0];
-    let selectedWithinLimit = selected.size.width * selected.size.height <= 2073600;
+    const photoAspect = this.normalizedAspect(photoProfile);
+    let selectedWithinLimit = selected.size.width * selected.size.height <= MAX_PREVIEW_PIXELS;
+    let selectedAspectDelta = Math.abs(this.normalizedAspect(selected) - photoAspect);
     profiles.forEach((profile: camera.Profile): void => {
       const pixels = profile.size.width * profile.size.height;
       const selectedPixels = selected.size.width * selected.size.height;
-      if (pixels <= 2073600 && (!selectedWithinLimit || pixels > selectedPixels)) {
+      const withinLimit = pixels <= MAX_PREVIEW_PIXELS;
+      const aspectDelta = Math.abs(this.normalizedAspect(profile) - photoAspect);
+      const closerAspect = aspectDelta < selectedAspectDelta - 0.0001;
+      const sameAspect = Math.abs(aspectDelta - selectedAspectDelta) <= 0.0001;
+      const betterResolution = withinLimit ? pixels > selectedPixels : pixels < selectedPixels;
+      if ((withinLimit && !selectedWithinLimit) ||
+        (withinLimit === selectedWithinLimit && (closerAspect || (sameAspect && betterResolution)))) {
         selected = profile;
-        selectedWithinLimit = true;
-      } else if (!selectedWithinLimit && pixels < selectedPixels) {
-        selected = profile;
+        selectedWithinLimit = withinLimit;
+        selectedAspectDelta = aspectDelta;
       }
     });
     return selected;
+  }
+
+  private normalizedAspect(profile: camera.Profile): number {
+    const shortEdge = Math.max(1, Math.min(profile.size.width, profile.size.height));
+    const longEdge = Math.max(profile.size.width, profile.size.height);
+    return longEdge / shortEdge;
   }
 
   private selectPhotoProfile(profiles: Array<camera.Profile>): camera.Profile {
