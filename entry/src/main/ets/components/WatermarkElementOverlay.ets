@@ -5,6 +5,8 @@ export struct WatermarkElementOverlay {
   @Prop elementId: string = '';
   @Prop elementType: WatermarkElementType = WatermarkElementType.TEXT;
   @Prop text: string = '';
+  @Prop sourceBadgeText: string = '';
+  @Prop sourceBadgeAutomatic: boolean = false;
   @Prop imageUri: string = '';
   @Prop opacityValue: number = 0.88;
   @Prop sizeValue: number = 18;
@@ -177,21 +179,33 @@ export struct WatermarkElementOverlay {
           .textAlign(TextAlign.Center).backgroundColor('#99000000').borderRadius(8)
       }
     } else {
-      Text(this.text.length > 0 ? this.text : '双击编辑文字')
-        .fontSize(this.currentFontSize())
-        .lineHeight(this.currentLayoutFontSize() * 1.28)
-        .fontWeight(FontWeight.Bold).fontColor(Color.White)
-        .constraintSize({ maxWidth: this.textMaxWidth() })
-        .wordBreak(WordBreak.BREAK_ALL)
-        .maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis })
-        .padding({
-          left: this.currentLayoutFontSize() * 0.35,
-          right: this.currentLayoutFontSize() * 0.35,
-          top: this.currentLayoutFontSize() * 0.22,
-          bottom: this.currentLayoutFontSize() * 0.22
-        })
-        .backgroundColor('#8A1E1510').borderRadius(7)
-        .textShadow({ radius: 2, color: '#66000000', offsetX: 0, offsetY: 1 })
+      Column({ space: Math.max(2, this.currentLayoutFontSize() * 0.12) }) {
+        if (this.sourceBadgeText.length > 0) {
+          Text(this.sourceBadgeText)
+            .fontSize(Math.max(9, this.currentFontSize() * 0.42))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.sourceBadgeAutomatic ? '#E8FFF0' : '#FFF4E8')
+            .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+            .backgroundColor(this.sourceBadgeAutomatic ? '#B85F8365' : '#B892603F')
+            .borderRadius(9)
+        }
+        Text(this.text.length > 0 ? this.text : '双击编辑文字')
+          .fontSize(this.currentFontSize())
+          .lineHeight(this.currentLayoutFontSize() * 1.28)
+          .fontWeight(FontWeight.Bold).fontColor(Color.White)
+          .constraintSize({ maxWidth: this.textMaxWidth() })
+          .wordBreak(WordBreak.BREAK_ALL)
+          .maxLines(6).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textShadow({ radius: 2, color: '#66000000', offsetX: 0, offsetY: 1 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .padding({
+        left: this.currentLayoutFontSize() * 0.35,
+        right: this.currentLayoutFontSize() * 0.35,
+        top: this.currentLayoutFontSize() * 0.22,
+        bottom: this.currentLayoutFontSize() * 0.22
+      })
+      .backgroundColor('#8A342217').borderRadius(7)
     }
   }
 

@@ -2,7 +2,13 @@ import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { AppError, AppErrorCode } from '../models/AppError';
 import { WatermarkConfig, WatermarkPosition } from '../models/WatermarkConfig';
-import { WatermarkElementConfig, WatermarkElementType } from '../models/WatermarkTemplate';
+import {
+  isAutomaticWatermarkSource,
+  watermarkElementDisplayText,
+  WatermarkElementConfig,
+  WatermarkElementType,
+  watermarkSourceLabel
+} from '../models/WatermarkTemplate';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
 
 class DrawPoint {
@@ -63,23 +69,40 @@ export class ImageComposer {
             const lineHeight = Math.round(fontSize * 1.28);
             const maxTextWidth = Math.max(fontSize,
               Math.round(info.size.width * 0.68) - horizontalPadding * 2);
-            const textLines = this.buildTextLines(drawing, element.text, maxTextWidth, 6);
+            const displayText = watermarkElementDisplayText(element);
+            const textLines = this.buildTextLines(drawing, displayText, maxTextWidth, 6);
             let textWidth = fontSize;
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
               textWidth = Math.max(textWidth, Math.ceil(drawing.measureText(textLines[lineIndex]).width));
             }
-            const blockWidth = textWidth + horizontalPadding * 2;
-            const blockHeight = lineHeight * textLines.length + verticalPadding * 2;
+            const badgeText = element.showSourceBadge ?
+              `${isAutomaticWatermarkSource(element.source) ? '◆' : '✎'} ${watermarkSourceLabel(element.source)}` : '';
+            const badgeFontSize = Math.max(14, Math.round(fontSize * 0.42));
+            const badgeHeight = badgeText.length > 0 ? Math.round(badgeFontSize * 1.35) : 0;
+            const badgeGap = badgeText.length > 0 ? Math.max(4, Math.round(fontSize * 0.14)) : 0;
+            drawing.font = 'bold ' + badgeFontSize + 'px sans-serif';
+            const badgeWidth = badgeText.length > 0 ? Math.ceil(drawing.measureText(badgeText).width) : 0;
+            drawing.font = 'bold ' + fontSize + 'px sans-serif';
+            const blockWidth = Math.max(textWidth, badgeWidth) + horizontalPadding * 2;
+            const blockHeight = lineHeight * textLines.length + badgeHeight + badgeGap + verticalPadding * 2;
             const point = this.resolveElementPosition(info.size.width, info.size.height,
               blockWidth, blockHeight, element);
             drawing.globalAlpha = this.clamp(element.opacity);
-            drawing.fillStyle = '#8A1E1510';
+            drawing.fillStyle = '#8A342217';
             drawing.fillRect(point.x, point.y, blockWidth, blockHeight);
-            drawing.fillStyle = '#FFFFFFFF';
             drawing.textBaseline = 'top';
+            let textY = point.y + verticalPadding;
+            if (badgeText.length > 0) {
+              drawing.font = 'bold ' + badgeFontSize + 'px sans-serif';
+              drawing.fillStyle = isAutomaticWatermarkSource(element.source) ? '#FFB8E1C5' : '#FFFFD4B8';
+              drawing.fillText(badgeText, point.x + horizontalPadding, textY);
+              textY += badgeHeight + badgeGap;
+            }
+            drawing.font = 'bold ' + fontSize + 'px sans-serif';
+            drawing.fillStyle = '#FFFFFFFF';
             for (let lineIndex = 0; lineIndex < textLines.length; lineIndex++) {
               drawing.fillText(textLines[lineIndex], point.x + horizontalPadding,
-                point.y + verticalPadding + lineIndex * lineHeight);
+                textY + lineIndex * lineHeight);
             }
           }
         }

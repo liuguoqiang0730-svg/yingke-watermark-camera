@@ -10,7 +10,6 @@
     "pages/ObjectDetectionPage",
     "pages/ResultPage",
     "pages/GalleryWatermarkPage",
-    "pages/SettingsPage",
     "pages/SubjectSegmentationPage"
   ]
 }

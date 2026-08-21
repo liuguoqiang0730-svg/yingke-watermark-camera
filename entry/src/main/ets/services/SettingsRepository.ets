@@ -4,6 +4,7 @@ import {
   createDefaultWatermarkTemplate,
   WatermarkElementConfig,
   WatermarkElementType,
+  WatermarkElementSource,
   WatermarkTemplateConfig
 } from '../models/WatermarkTemplate';
 
@@ -43,6 +44,9 @@ export class SettingsRepository {
       const element = new WatermarkElementConfig(
         store.getSync(`${prefix}_id`, `element_${index}`) as string, type);
       element.text = store.getSync(`${prefix}_text`, element.text) as string;
+      element.fieldLabel = store.getSync(`${prefix}_field_label`, '') as string;
+      element.source = store.getSync(`${prefix}_source`, WatermarkElementSource.MANUAL) as WatermarkElementSource;
+      element.showSourceBadge = store.getSync(`${prefix}_show_source_badge`, true) as boolean;
       element.imageUri = store.getSync(`${prefix}_image_uri`, '') as string;
       element.visible = store.getSync(`${prefix}_visible`, true) as boolean;
       element.positionX = store.getSync(`${prefix}_position_x`, element.positionX) as number;
@@ -74,6 +78,9 @@ export class SettingsRepository {
       store.putSync(`${prefix}_id`, element.id);
       store.putSync(`${prefix}_type`, element.type);
       store.putSync(`${prefix}_text`, element.text);
+      store.putSync(`${prefix}_field_label`, element.fieldLabel);
+      store.putSync(`${prefix}_source`, element.source);
+      store.putSync(`${prefix}_show_source_badge`, element.showSourceBadge);
       store.putSync(`${prefix}_image_uri`, element.imageUri);
       store.putSync(`${prefix}_visible`, element.visible);
       store.putSync(`${prefix}_position_x`, element.positionX);

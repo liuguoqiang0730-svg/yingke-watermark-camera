@@ -5,8 +5,15 @@ import {
   cloneWatermarkElement,
   cloneWatermarkTemplate,
   createDefaultWatermarkTemplate,
+  createMinimalDateWatermarkTemplate,
+  createSourceWatermarkElement,
+  createTimeLocationWatermarkTemplate,
+  isAutomaticWatermarkSource,
+  watermarkElementDisplayText,
   WatermarkElementConfig,
   WatermarkElementType,
+  WatermarkElementSource,
+  watermarkSourceLabel,
   WatermarkTemplateConfig
 } from '../models/WatermarkTemplate';
 import { MediaService } from '../services/MediaService';
@@ -27,6 +34,8 @@ struct SettingsPage {
   @State private loading: boolean = true;
   @State private showExitDialog: boolean = false;
 
+  @State private editorTab: number = 1;
+  @State private showElementPicker: boolean = false;
   private readonly repository: SettingsRepository = new SettingsRepository();
   private readonly mediaService: MediaService = new MediaService();
   private readonly abilityContext: common.UIAbilityContext =
@@ -37,6 +46,10 @@ struct SettingsPage {
   }
 
   onBackPress(): boolean {
+    if (this.showElementPicker) {
+      this.showElementPicker = false;
+      return true;
+    }
     if (this.showExitDialog) {
       this.showExitDialog = false;
       return true;
@@ -194,6 +207,82 @@ struct SettingsPage {
   private selectElement(id: string): void {
     this.selectedId = id;
   }
+  private elementTitle(element: WatermarkElementConfig): string {
+    if (element.type === WatermarkElementType.IMAGE) {
+      return '自定义图片';
+    }
+    if (element.source === WatermarkElementSource.CAPTURE_DATE_TIME) {
+      return '日期时间';
+    }
+    if (element.source === WatermarkElementSource.CAPTURE_LOCATION) {
+      return '地点';
+    }
+    if (element.source === WatermarkElementSource.CAPTURE_COORDINATES) {
+      return '经纬度';
+    }
+    return element.fieldLabel.length > 0 ? element.fieldLabel : '自由文字';
+  }
+
+  private addSourceElement(source: WatermarkElementSource): void {
+    if (this.elements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    if (source !== WatermarkElementSource.MANUAL &&
+      this.elements.some((item: WatermarkElementConfig) => item.source === source)) {
+      this.showToast('这个自动信息已经添加');
+      return;
+    }
+    const element = createSourceWatermarkElement(source, `source_${source}_${Date.now()}`);
+    element.positionX = 0.08;
+    element.positionY = Math.min(0.82, 0.18 + this.elements.length * 0.1);
+    this.elements = this.elements.concat([element]);
+    this.selectedId = element.id;
+    this.editorTab = 2;
+    this.showElementPicker = false;
+    this.markDirty();
+  }
+
+  private addManualField(label: string, value: string): void {
+    if (this.elements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    const element = new WatermarkElementConfig(`field_${Date.now()}`, WatermarkElementType.TEXT);
+    element.fieldLabel = label;
+    element.text = value;
+    element.source = WatermarkElementSource.MANUAL;
+    element.positionX = 0.08;
+    element.positionY = Math.min(0.82, 0.18 + this.elements.length * 0.1);
+    element.sizePercent = 3.5;
+    this.elements = this.elements.concat([element]);
+    this.selectedId = element.id;
+    this.editorTab = 2;
+    this.showElementPicker = false;
+    this.markDirty();
+  }
+
+  private updateFieldLabel(value: string): void {
+    const index = this.selectedIndex();
+    if (index < 0 || this.elements[index].fieldLabel === value) {
+      return;
+    }
+    const updated = cloneWatermarkElement(this.elements[index]);
+    updated.fieldLabel = value;
+    this.replaceElement(updated);
+  }
+
+  private applyPresetTemplate(preset: number): void {
+    if (preset === 0) {
+      this.applyTemplate(createTimeLocationWatermarkTemplate(new Date(), '正在获取位置…', '正在获取经纬度…'));
+    } else if (preset === 1) {
+      this.applyTemplate(createMinimalDateWatermarkTemplate(new Date()));
+    } else {
+      this.applyTemplate(createDefaultWatermarkTemplate());
+    }
+    this.editorTab = 1;
+    this.markDirty();
+  }
 
   private addText(): void {
     if (this.elements.length >= 8) {
@@ -207,9 +296,10 @@ struct SettingsPage {
     element.sizePercent = 3.5;
     this.elements = this.elements.concat([element]);
     this.selectedId = element.id;
+    this.editorTab = 2;
+    this.showElementPicker = false;
     this.markDirty();
   }
-
   private async addImage(): Promise<void> {
     if (this.elements.length >= 8) {
       this.showToast('最多可以添加 8 个水印元素');
@@ -225,6 +315,8 @@ struct SettingsPage {
       element.opacity = 0.9;
       this.elements = this.elements.concat([element]);
       this.selectedId = element.id;
+      this.editorTab = 2;
+      this.showElementPicker = false;
       this.markDirty();
     } catch (error) {
       const message = ErrorMessageUtil.from(error as object, '没有添加图片。');
@@ -233,6 +325,7 @@ struct SettingsPage {
       }
     }
   }
+
 
   private async replaceSelectedImage(): Promise<void> {
     const index = this.selectedIndex();
@@ -327,7 +420,10 @@ struct SettingsPage {
           WatermarkElementOverlay({
             elementId: element.id,
             elementType: element.type,
-            text: element.text,
+            text: watermarkElementDisplayText(element),
+            sourceBadgeText: element.type === WatermarkElementType.TEXT && element.showSourceBadge ?
+              watermarkSourceLabel(element.source) : '',
+            sourceBadgeAutomatic: isAutomaticWatermarkSource(element.source),
             imageUri: element.imageUri,
             opacityValue: element.opacity,
             sizeValue: this.previewElementSize(element),
@@ -372,31 +468,50 @@ struct SettingsPage {
   private elementSelector() {
     Column({ space: 10 }) {
       Row() {
-        Text('水印元素').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#4A3025')
+        Text('当前内容').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#4A3025')
         Blank()
         Text(`${this.elements.length}/8`).fontSize(12).fontColor('#A07A63')
       }.width('100%')
-      List({ space: 8 }) {
-        ForEach(this.elements, (element: WatermarkElementConfig, index: number) => {
-          ListItem() {
-            Row({ space: 7 }) {
-              Text(element.type === WatermarkElementType.TEXT ? '文' : '图')
-                .fontSize(12).fontWeight(FontWeight.Bold)
-                .width(28).height(28).textAlign(TextAlign.Center)
-                .fontColor(element.id === this.selectedId ? Color.White : '#8A604A')
-                .backgroundColor(element.id === this.selectedId ? '#E96832' : '#F4E5D8').borderRadius(14)
-              Text(element.type === WatermarkElementType.TEXT ?
-                (element.text.length > 0 ? element.text : '空文字') : `图片 ${index + 1}`)
-                .fontSize(12).fontColor('#5A3829').maxLines(1)
+      Column({ space: 8 }) {
+        ForEach(this.elements, (element: WatermarkElementConfig) => {
+          Row({ space: 9 }) {
+            Text('⠿').fontSize(17).fontColor('#C49A7E')
+            Text(element.type === WatermarkElementType.IMAGE ? '▧' :
+              (isAutomaticWatermarkSource(element.source) ? '◆' : '✎'))
+              .fontSize(13).fontWeight(FontWeight.Bold)
+              .width(28).height(28).textAlign(TextAlign.Center)
+              .fontColor(element.id === this.selectedId ? Color.White : '#A45B37')
+              .backgroundColor(element.id === this.selectedId ? '#E96832' : '#FFE8D6').borderRadius(14)
+            Column({ space: 2 }) {
+              Text(this.elementTitle(element)).fontSize(13).fontWeight(FontWeight.Medium)
+                .fontColor('#4A3025').maxLines(1)
+              Text(element.type === WatermarkElementType.IMAGE ? '本机图片' : watermarkElementDisplayText(element))
+                .fontSize(10).fontColor('#9A725C').maxLines(1)
+            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+            if (element.type === WatermarkElementType.TEXT) {
+              Text(watermarkSourceLabel(element.source)).fontSize(10)
+                .fontColor(isAutomaticWatermarkSource(element.source) ? '#4E7357' : '#9A684A')
+                .padding({ left: 7, right: 7, top: 4, bottom: 4 })
+                .backgroundColor(isAutomaticWatermarkSource(element.source) ? '#E7F1E8' : '#FFF0E3')
+                .borderRadius(9)
             }
-            .height(42).padding({ left: 8, right: 12 })
-            .backgroundColor(element.id === this.selectedId ? '#FFF0E3' : '#FFFDF9')
-            .borderRadius(15)
-            .border({ width: 1, color: element.id === this.selectedId ? '#EAA070' : '#EEDBCB', radius: 15 })
-            .onClick(() => this.selectElement(element.id))
+            Toggle({ type: ToggleType.Switch, isOn: element.visible })
+              .selectedColor('#E96832').onChange((value: boolean) => {
+                this.selectElement(element.id);
+                this.updateVisibility(value);
+              })
           }
+          .width('100%').height(58).padding({ left: 10, right: 10 })
+          .backgroundColor(element.id === this.selectedId ? '#FFF0E3' : '#FFFDF9')
+          .borderRadius(15)
+          .border({ width: 1, color: element.id === this.selectedId ? '#EAA070' : '#EEDBCB', radius: 15 })
+          .onClick(() => this.selectElement(element.id))
         }, (element: WatermarkElementConfig) => element.id)
-      }.width('100%').height(48).listDirection(Axis.Horizontal).scrollBar(BarState.Off)
+      }.width('100%')
+      Button('＋ 添加内容').width('100%').height(44).type(ButtonType.Normal).fontSize(14)
+        .fontColor('#D95725').backgroundColor('#FFFDF9').borderRadius(14)
+        .border({ width: 1, color: '#E96832', radius: 14 })
+        .onClick(() => this.showElementPicker = true)
     }.width('100%')
   }
 
@@ -440,14 +555,40 @@ struct SettingsPage {
         }.width('100%')
 
         if (this.elements[this.selectedIndex()].type === WatermarkElementType.TEXT) {
-          Column({ space: 7 }) {
-            Text('文字内容').fontSize(13).fontColor('#6F4C3A').width('100%')
-            TextArea({ text: this.elements[this.selectedIndex()].text, placeholder: '输入水印文字，回车可换行' })
-              .width('100%').height(88).maxLength(120).fontSize(14).fontColor('#3B2117')
-              .backgroundColor('#FFF9F3').borderRadius(14)
-              .border({ width: 1, color: '#ECD4C1', radius: 14 })
-              .onChange((value: string) => this.updateText(value))
-          }.width('100%')
+          if (this.elements[this.selectedIndex()].source !== WatermarkElementSource.MANUAL) {
+            Column({ space: 7 }) {
+              Row({ space: 7 }) {
+                Text('◆').fontSize(12).fontColor('#5F8365')
+                Text(watermarkSourceLabel(this.elements[this.selectedIndex()].source))
+                  .fontSize(13).fontWeight(FontWeight.Bold).fontColor('#4E7357')
+              }.width('100%')
+              Text('拍摄时自动获取，内容不可手动修改')
+                .fontSize(11).fontColor('#75907A').width('100%')
+              Text(watermarkElementDisplayText(this.elements[this.selectedIndex()]))
+                .fontSize(14).fontColor('#3B2117').width('100%')
+                .padding(12).backgroundColor('#F2F7F1').borderRadius(12)
+                .border({ width: 1, color: '#BFD0C1', radius: 12 })
+            }.width('100%')
+          } else {
+            Column({ space: 9 }) {
+              Text('字段名称').fontSize(12).fontColor('#6F4C3A').width('100%')
+              TextInput({ text: this.elements[this.selectedIndex()].fieldLabel,
+                placeholder: '例如：姓名、项目名称、备注' })
+                .width('100%').height(42).maxLength(20).fontSize(13).fontColor('#3B2117')
+                .backgroundColor('#FFF9F3').borderRadius(12)
+                .border({ width: 1, color: '#ECD4C1', radius: 12 })
+                .onChange((value: string) => this.updateFieldLabel(value))
+              Text('字段内容').fontSize(12).fontColor('#6F4C3A').width('100%')
+              TextArea({ text: this.elements[this.selectedIndex()].text,
+                placeholder: '输入内容，成片会标注为手动填写' })
+                .width('100%').height(78).maxLength(120).fontSize(14).fontColor('#3B2117')
+                .backgroundColor('#FFF9F3').borderRadius(14)
+                .border({ width: 1, color: '#ECD4C1', radius: 14 })
+                .onChange((value: string) => this.updateText(value))
+              Text('✎ 手动填写 · 不代表拍摄现场自动信息')
+                .fontSize(11).fontColor('#9A684A').width('100%')
+            }.width('100%')
+          }
           this.sliderRow('文字大小', `${this.elements[this.selectedIndex()].sizePercent.toFixed(1)}%`,
             this.elements[this.selectedIndex()].sizePercent, 2, 10, 0.5,
             (value: number) => this.updateSize(value))
@@ -490,34 +631,136 @@ struct SettingsPage {
   @Builder
   private editorPanel() {
     Column({ space: 16 }) {
-      this.brandRow()
-      Divider().color('#F0D8C4')
-      this.elementSelector()
-      this.selectedEditor()
-      Row({ space: 10 }) {
-        Button('+ 插入文字').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(13)
-          .fontColor('#A44D28').backgroundColor('#FFEBDD').borderRadius(14)
-          .onClick(() => this.addText())
-        Button('+ 插入图片').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(13)
-          .fontColor('#A44D28').backgroundColor('#FFEBDD').borderRadius(14)
-          .onClick(() => this.addImage())
-      }.width('100%')
-      Row({ space: 10 }) {
-        Button('删除当前水印').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(12)
-          .fontColor('#A24C3A').backgroundColor('#FFF5F0').borderRadius(13)
-          .onClick(() => this.deleteSelected())
-        Button('恢复默认设置').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(12)
-          .fontColor('#6F4C3A').backgroundColor('#FFF3E7').borderRadius(13)
-          .onClick(() => this.resetDefaults())
-      }.width('100%')
-      Text('在预览画面中拖动水印改变位置，双指缩放改变大小。保存后，新打开的相机会使用这套模板。')
-        .width('100%').fontSize(11).lineHeight(17).fontColor('#9A725C')
+      Row() {
+        Button('模板').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+          .fontWeight(this.editorTab === 0 ? FontWeight.Bold : FontWeight.Regular)
+          .fontColor(this.editorTab === 0 ? Color.White : '#765442')
+          .backgroundColor(this.editorTab === 0 ? '#D96735' : Color.Transparent)
+          .borderRadius(14).onClick(() => this.editorTab = 0)
+        Button('内容').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+          .fontWeight(this.editorTab === 1 ? FontWeight.Bold : FontWeight.Regular)
+          .fontColor(this.editorTab === 1 ? Color.White : '#765442')
+          .backgroundColor(this.editorTab === 1 ? '#D96735' : Color.Transparent)
+          .borderRadius(14).onClick(() => this.editorTab = 1)
+        Button('样式').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+          .fontWeight(this.editorTab === 2 ? FontWeight.Bold : FontWeight.Regular)
+          .fontColor(this.editorTab === 2 ? Color.White : '#765442')
+          .backgroundColor(this.editorTab === 2 ? '#D96735' : Color.Transparent)
+          .borderRadius(14).onClick(() => this.editorTab = 2)
+      }.width('100%').padding(4).backgroundColor('#F7E8DB').borderRadius(18)
+
+      if (this.editorTab === 0) {
+        Text('选择初始模板').width('100%').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#4A3025')
+        Button('时间地点  ·  日期 / 地址 / 经纬度').width('100%').height(48).type(ButtonType.Normal)
+          .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+          .onClick(() => this.applyPresetTemplate(0))
+        Button('极简日期  ·  只显示拍摄日期').width('100%').height(48).type(ButtonType.Normal)
+          .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+          .onClick(() => this.applyPresetTemplate(1))
+        Button('自由模板  ·  从一条文字开始').width('100%').height(48).type(ButtonType.Normal)
+          .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+          .onClick(() => this.applyPresetTemplate(2))
+        Text('模板只决定初始布局。选择后仍可添加姓名、项目、地点等内容。')
+          .width('100%').fontSize(11).lineHeight(17).fontColor('#9A725C')
+      } else if (this.editorTab === 1) {
+        this.elementSelector()
+        Row({ space: 8 }) {
+          Text('◆ 自动信息').fontSize(11).fontColor('#47745D')
+          Text('内容锁定').fontSize(11).fontColor('#8C6A58')
+          Blank()
+          Text('✎ 手动信息').fontSize(11).fontColor('#9B623E')
+          Text('始终标注').fontSize(11).fontColor('#8C6A58')
+        }.width('100%').padding(12).backgroundColor('#FFF4E9').borderRadius(14)
+      } else {
+        this.selectedEditor()
+        Divider().color('#F0D8C4')
+        this.brandRow()
+        Row({ space: 10 }) {
+          Button('删除当前内容').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#A24C3A').backgroundColor('#FFF5F0').borderRadius(13)
+            .onClick(() => this.deleteSelected())
+          Button('恢复默认设置').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#6F4C3A').backgroundColor('#FFF3E7').borderRadius(13)
+            .onClick(() => this.resetDefaults())
+        }.width('100%')
+        Text('可在左侧预览中拖动改变位置，双指缩放改变大小。')
+          .width('100%').fontSize(11).lineHeight(17).fontColor('#9A725C')
+      }
     }
     .width('100%').padding(this.isExpanded() ? 22 : 18)
     .backgroundColor('#FFFDF9').borderRadius(24)
     .border({ width: 1, color: '#EED7C5', radius: 24 })
   }
 
+  @Builder
+  private elementPickerOverlay() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column().width('100%').height('100%').backgroundColor('#730F0906')
+        .onClick(() => this.showElementPicker = false)
+      Column({ space: 14 }) {
+        Row() {
+          Column({ space: 3 }) {
+            Text('添加内容').fontSize(21).fontWeight(FontWeight.Bold).fontColor('#3B2117')
+            Text('自动信息由设备获取，手动信息会明确标注').fontSize(12).fontColor('#A07A63')
+          }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+          Button('×').width(36).height(36).fontSize(22).type(ButtonType.Normal)
+            .fontColor('#7A5A49').backgroundColor('#FFF0E3').borderRadius(18)
+            .onClick(() => this.showElementPicker = false)
+        }.width('100%')
+
+        Text('自动信息').width('100%').fontSize(13).fontWeight(FontWeight.Bold).fontColor('#47745D')
+        Row({ space: 10 }) {
+          Button('◷ 日期时间').layoutWeight(1).height(44).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(14)
+            .onClick(() => this.addSourceElement(WatermarkElementSource.CAPTURE_DATE_TIME))
+          Button('⌖ 地点').layoutWeight(1).height(44).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(14)
+            .onClick(() => this.addSourceElement(WatermarkElementSource.CAPTURE_LOCATION))
+          Button('◎ 经纬度').layoutWeight(1).height(44).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(14)
+            .onClick(() => this.addSourceElement(WatermarkElementSource.CAPTURE_COORDINATES))
+        }.width('100%')
+
+        Text('个人与工作').width('100%').fontSize(13).fontWeight(FontWeight.Bold).fontColor('#7B4F38')
+        GridRow({ columns: 2, gutter: 10 }) {
+          GridCol({ span: 1 }) {
+            Button('姓名').width('100%').height(44).type(ButtonType.Normal).fontSize(12)
+              .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(14)
+              .onClick(() => this.addManualField('姓名', '请输入姓名'))
+          }
+          GridCol({ span: 1 }) {
+            Button('公司 / 团队').width('100%').height(44).type(ButtonType.Normal).fontSize(12)
+              .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(14)
+              .onClick(() => this.addManualField('公司/团队', '请输入名称'))
+          }
+          GridCol({ span: 1 }) {
+            Button('项目名称').width('100%').height(44).type(ButtonType.Normal).fontSize(12)
+              .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(14)
+              .onClick(() => this.addManualField('项目名称', '请输入项目'))
+          }
+          GridCol({ span: 1 }) {
+            Button('自定义字段').width('100%').height(44).type(ButtonType.Normal).fontSize(12)
+              .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(14)
+              .onClick(() => this.addManualField('自定义字段', '请输入内容'))
+          }
+        }.width('100%')
+
+        Row({ space: 10 }) {
+          Button('＋ 自由文字').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#6F4C3A').backgroundColor('#F8EBDD').borderRadius(14)
+            .onClick(() => this.addText())
+          Button('▧ 图片 / Logo').layoutWeight(1).height(42).type(ButtonType.Normal).fontSize(12)
+            .fontColor('#6F4C3A').backgroundColor('#F8EBDD').borderRadius(14)
+            .onClick(() => this.addImage())
+        }.width('100%')
+      }
+      .width(this.isExpanded() ? 520 : '100%').constraintSize({ maxWidth: 520 })
+      .padding({ left: 22, right: 22, top: 22, bottom: 28 })
+      .backgroundColor('#FFFDF9').borderRadius({ topLeft: 28, topRight: 28 })
+      .border({ width: 1, color: '#E8C7AE', radius: 28 })
+      .shadow({ radius: 30, color: '#42000000', offsetY: -8 })
+    }.width('100%').height('100%').zIndex(110)
+  }
   @Builder
   private exitConfirmOverlay() {
     Stack({ alignContent: Alignment.Center }) {
@@ -617,6 +860,9 @@ struct SettingsPage {
       }.width('100%').height('100%').backgroundColor('#FFF8F0')
       if (this.showExitDialog) {
         this.exitConfirmOverlay()
+      }
+      if (this.showElementPicker) {
+        this.elementPickerOverlay()
       }
     }.width('100%').height('100%')
   }

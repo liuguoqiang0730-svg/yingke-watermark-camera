@@ -34,7 +34,7 @@ struct HomePage {
     try {
       this.getUIContext().getRouter().pushUrl({
         url: 'pages/CameraPage',
-        params: { watermarkPreset: this.selectedWatermark }
+        params: { watermarkPreset: this.selectedWatermark, editorMode: true }
       });
     } catch (_) {
       this.showToast('暂时无法打开相机');
@@ -76,7 +76,10 @@ struct HomePage {
       .focusable(false).focusOnTouch(false)
       .border({ width: 2, color: '#D9AA83' })
       .backgroundColor('#FFF1E3').borderRadius(26)
-      .onClick(() => this.getUIContext().getRouter().pushUrl({ url: 'pages/SettingsPage' }))
+      .onClick(() => this.getUIContext().getRouter().pushUrl({
+        url: 'pages/CameraPage',
+        params: { watermarkPreset: WatermarkPreset.CUSTOM, editorMode: true }
+      }))
     }.width('100%')
   }
 

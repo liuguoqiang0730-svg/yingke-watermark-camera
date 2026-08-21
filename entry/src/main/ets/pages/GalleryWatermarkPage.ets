@@ -11,11 +11,18 @@ import {
   cloneWatermarkElement,
   cloneWatermarkTemplate,
   createDefaultWatermarkTemplate,
+  createSourceWatermarkElement,
   createMinimalDateWatermarkTemplate,
   createTimeLocationWatermarkTemplate,
+  formatWatermarkDate,
+  formatWatermarkDateTime,
+  isAutomaticWatermarkSource,
+  watermarkElementDisplayText,
   WatermarkElementConfig,
+  WatermarkElementSource,
   WatermarkElementType,
   WatermarkPreset,
+  watermarkSourceLabel,
   WatermarkTemplateConfig
 } from '../models/WatermarkTemplate';
 import { MediaService } from '../services/MediaService';
@@ -53,32 +60,54 @@ struct GalleryWatermarkPage {
     return this.viewportWidth >= 600;
   }
 
-  private selectPreset(preset: WatermarkPreset): void {
-    this.selectedPreset = preset;
-    if (preset === WatermarkPreset.MINIMAL_DATE) {
-      this.template = createMinimalDateWatermarkTemplate(new Date());
-      return;
-    }
-    if (preset === WatermarkPreset.TIME_LOCATION) {
-      this.selectTimeLocationPreset();
-      return;
-    }
-    try {
-      this.template = this.settingsRepository.load(this.abilityContext).template;
-    } catch (_) {
-      this.template = createDefaultWatermarkTemplate();
-    }
+  private asGalleryTemplate(source: WatermarkTemplateConfig): WatermarkTemplateConfig {
+    const template = cloneWatermarkTemplate(source);
+    const now = new Date();
+    template.elements = template.elements.map((item: WatermarkElementConfig) => {
+      const updated = cloneWatermarkElement(item);
+      if (item.source === WatermarkElementSource.CAPTURE_DATE_TIME ||
+        item.source === WatermarkElementSource.EDIT_DATE_TIME) {
+        updated.source = WatermarkElementSource.EDIT_DATE_TIME;
+        updated.text = item.id === 'preset_date' ? formatWatermarkDate(now) : formatWatermarkDateTime(now);
+      } else if (item.source === WatermarkElementSource.CAPTURE_LOCATION ||
+        item.source === WatermarkElementSource.EDIT_LOCATION) {
+        updated.source = WatermarkElementSource.EDIT_LOCATION;
+        updated.text = '正在获取编辑位置…';
+      } else if (item.source === WatermarkElementSource.CAPTURE_COORDINATES ||
+        item.source === WatermarkElementSource.EDIT_COORDINATES) {
+        updated.source = WatermarkElementSource.EDIT_COORDINATES;
+        updated.text = '正在获取编辑经纬度…';
+      }
+      return updated;
+    });
+    return template;
   }
 
-  private async selectTimeLocationPreset(): Promise<void> {
-    if (this.requestingLocation) {
+  private requiresGalleryLocation(): boolean {
+    return this.template.elements.some((item: WatermarkElementConfig) =>
+      item.source === WatermarkElementSource.EDIT_LOCATION ||
+      item.source === WatermarkElementSource.EDIT_COORDINATES);
+  }
+
+  private updateGalleryLocation(locationText: string, coordinateText: string): void {
+    const updated = cloneWatermarkTemplate(this.template);
+    updated.elements = updated.elements.map((item: WatermarkElementConfig) => {
+      const next = cloneWatermarkElement(item);
+      if (item.source === WatermarkElementSource.EDIT_LOCATION) {
+        next.text = locationText;
+      } else if (item.source === WatermarkElementSource.EDIT_COORDINATES) {
+        next.text = coordinateText;
+      }
+      return next;
+    });
+    this.template = updated;
+  }
+
+  private async refreshGalleryLocation(): Promise<void> {
+    if (this.requestingLocation || !this.requiresGalleryLocation()) {
       return;
     }
-    this.selectedPreset = WatermarkPreset.TIME_LOCATION;
     this.requestingLocation = true;
-    this.selectedWatermarkId = '';
-    this.template = createTimeLocationWatermarkTemplate(
-      new Date(), '正在获取位置…', '正在获取经纬度…');
     let permissionState = PermissionManager.getInstance().checkPermission(
       this.abilityContext, APPROXIMATE_LOCATION_PERMISSION);
     if (permissionState !== PermissionState.GRANTED) {
@@ -86,25 +115,39 @@ struct GalleryWatermarkPage {
         .requestLocationPermissions(this.abilityContext);
     }
     if (permissionState !== PermissionState.GRANTED) {
+      this.updateGalleryLocation('编辑位置未授权', '编辑经纬度未授权');
       this.requestingLocation = false;
-      this.template = createTimeLocationWatermarkTemplate(
-        new Date(), '位置未授权', '经纬度未授权');
-      this.showToast('未获得定位权限，地点信息无法显示');
+      this.showToast('未获得定位权限，编辑位置无法显示');
       return;
     }
     try {
       const location = await this.locationService.getCurrentLocation();
-      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
-        this.template = createTimeLocationWatermarkTemplate(
-          new Date(), location.locationText, location.coordinateText);
-      }
+      this.updateGalleryLocation(location.locationText, location.coordinateText);
     } catch (_) {
-      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
-        this.template = createTimeLocationWatermarkTemplate(
-          new Date(), '位置未获取', '经纬度未获取');
-      }
+      this.updateGalleryLocation('编辑位置未获取', '编辑经纬度未获取');
     } finally {
       this.requestingLocation = false;
+    }
+  }
+
+  private selectPreset(preset: WatermarkPreset): void {
+    this.selectedPreset = preset;
+    this.selectedWatermarkId = '';
+    if (preset === WatermarkPreset.MINIMAL_DATE) {
+      this.template = this.asGalleryTemplate(createMinimalDateWatermarkTemplate(new Date()));
+      return;
+    }
+    if (preset === WatermarkPreset.TIME_LOCATION) {
+      this.template = this.asGalleryTemplate(createTimeLocationWatermarkTemplate(
+        new Date(), '正在获取编辑位置…', '正在获取编辑经纬度…'));
+      this.refreshGalleryLocation();
+      return;
+    }
+    try {
+      this.template = this.asGalleryTemplate(this.settingsRepository.load(this.abilityContext).template);
+      this.refreshGalleryLocation();
+    } catch (_) {
+      this.template = createDefaultWatermarkTemplate();
     }
   }
 
@@ -127,6 +170,61 @@ struct GalleryWatermarkPage {
     } finally {
       this.selecting = false;
     }
+  }
+
+  private addGalleryManualField(label: string): void {
+    if (this.template.elements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    const updated = cloneWatermarkTemplate(this.template);
+    const element = new WatermarkElementConfig(`gallery_field_${Date.now()}`, WatermarkElementType.TEXT);
+    element.fieldLabel = label;
+    element.text = label === '姓名' ? '请输入姓名' : '请输入内容';
+    element.source = WatermarkElementSource.MANUAL;
+    element.positionX = 0.08;
+    element.positionY = Math.min(0.82, 0.18 + updated.elements.length * 0.1);
+    element.sizePercent = 3.5;
+    updated.elements = updated.elements.concat([element]);
+    this.template = updated;
+    this.selectedWatermarkId = element.id;
+  }
+
+  private addGallerySource(source: WatermarkElementSource): void {
+    if (this.template.elements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    if (this.template.elements.some((item: WatermarkElementConfig) => item.source === source)) {
+      this.showToast('这个信息已经添加');
+      return;
+    }
+    const updated = cloneWatermarkTemplate(this.template);
+    const element = createSourceWatermarkElement(source, `gallery_source_${Date.now()}`);
+    element.positionY = Math.min(0.82, 0.18 + updated.elements.length * 0.1);
+    updated.elements = updated.elements.concat([element]);
+    this.template = updated;
+    this.selectedWatermarkId = element.id;
+    if (source === WatermarkElementSource.EDIT_LOCATION ||
+      source === WatermarkElementSource.EDIT_COORDINATES) {
+      this.refreshGalleryLocation();
+    }
+  }
+
+  private updateSelectedGalleryText(value: string): void {
+    const updated = cloneWatermarkTemplate(this.template);
+    const element = updated.elements.find((item: WatermarkElementConfig) =>
+      item.id === this.selectedWatermarkId);
+    if (!element || isAutomaticWatermarkSource(element.source)) {
+      return;
+    }
+    element.text = value;
+    this.template = updated;
+  }
+
+  private selectedGalleryElement(): WatermarkElementConfig | undefined {
+    return this.template.elements.find((item: WatermarkElementConfig) =>
+      item.id === this.selectedWatermarkId);
   }
 
   private firstTextElement(): WatermarkElementConfig | undefined {
@@ -342,7 +440,10 @@ struct GalleryWatermarkPage {
             WatermarkElementOverlay({
               elementId: element.id,
               elementType: element.type,
-              text: element.text,
+              text: watermarkElementDisplayText(element),
+              sourceBadgeText: element.type === WatermarkElementType.TEXT && element.showSourceBadge ?
+                watermarkSourceLabel(element.source) : '',
+              sourceBadgeAutomatic: isAutomaticWatermarkSource(element.source),
               imageUri: element.imageUri,
               opacityValue: element.opacity,
               sizeValue: this.previewElementSize(element),
@@ -468,11 +569,48 @@ struct GalleryWatermarkPage {
             }.width('100%')
             Row({ space: 10 }) {
               this.presetCard(WatermarkPreset.TIME_LOCATION, '●', '时间地点',
-                this.requestingLocation ? '正在获取位置…' : '时间、地点与经纬度')
+                this.requestingLocation ? '正在获取位置…' : '编辑时间、当前地点与经纬度')
               this.presetCard(WatermarkPreset.MINIMAL_DATE, '▣', '极简日期', '干净简洁的日期样式')
               this.presetCard(WatermarkPreset.CUSTOM, '✎', '自定义', '使用已保存的模板')
             }.width('100%')
           }.width('100%')
+
+          Column({ space: 10 }) {
+            Row() {
+              Text('添加内容').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#3B2117')
+              Blank()
+              Text('最多 8 项').fontSize(11).fontColor('#A07A63')
+            }.width('100%')
+            Row({ space: 8 }) {
+              Button('＋姓名').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(11)
+                .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(13)
+                .onClick(() => this.addGalleryManualField('姓名'))
+              Button('＋日期时间').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(11)
+                .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(13)
+                .onClick(() => this.addGallerySource(WatermarkElementSource.EDIT_DATE_TIME))
+              Button('＋地点').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(11)
+                .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(13)
+                .onClick(() => this.addGallerySource(WatermarkElementSource.EDIT_LOCATION))
+              Button('＋自定义').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(11)
+                .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(13)
+                .onClick(() => this.addGalleryManualField('自定义字段'))
+            }.width('100%')
+            if (this.selectedGalleryElement()) {
+              if (isAutomaticWatermarkSource(this.selectedGalleryElement()?.source ??
+                WatermarkElementSource.MANUAL)) {
+                Text(`◆ ${watermarkSourceLabel(this.selectedGalleryElement()?.source ??
+                  WatermarkElementSource.MANUAL)} · 内容由系统获取，不可手动修改`)
+                  .width('100%').fontSize(11).fontColor('#47745D')
+                  .padding(12).backgroundColor('#EAF4ED').borderRadius(13)
+              } else if (this.selectedGalleryElement()?.type === WatermarkElementType.TEXT) {
+                TextArea({ text: this.selectedGalleryElement()?.text ?? '', placeholder: '输入内容' })
+                  .width('100%').height(72).maxLength(100).backgroundColor('#FFF8F1')
+                  .onChange((value: string) => this.updateSelectedGalleryText(value))
+                Text('✎ 手动填写 · 成品会保留来源标识').fontSize(11).fontColor('#9B623E').width('100%')
+              }
+            }
+          }.width('100%').padding(16).backgroundColor('#FFFDF9').borderRadius(20)
+            .border({ width: 1, color: '#EED7C5', radius: 20 })
 
           if (this.errorMessage) {
             Text(this.errorMessage).fontSize(13).fontColor('#8C3020').width('100%')

@@ -14,13 +14,20 @@ import {
   cloneWatermarkElement,
   createDefaultWatermarkTemplate,
   createMinimalDateWatermarkTemplate,
+  createSourceWatermarkElement,
   createTimeLocationWatermarkTemplate,
+  formatWatermarkDate,
+  formatWatermarkDateTime,
+  isAutomaticWatermarkSource,
+  watermarkElementDisplayText,
   WatermarkElementConfig,
+  WatermarkElementSource,
   WatermarkElementType,
   WatermarkPreset,
+  watermarkSourceLabel,
   WatermarkTemplateConfig
 } from '../models/WatermarkTemplate';
-import { SettingsRepository } from '../services/SettingsRepository';
+import { SettingsRepository, WatermarkDefaults } from '../services/SettingsRepository';
 import { WatermarkLocationInfo, WatermarkLocationService } from '../services/WatermarkLocationService';
 import { CameraViewModel } from '../viewmodels/CameraViewModel';
 import { ErrorMessageUtil } from '../utils/ErrorMessageUtil';
@@ -30,6 +37,7 @@ const TAG: string = 'CameraPage';
 
 class CameraParams {
   watermarkPreset?: WatermarkPreset;
+  editorMode?: boolean;
 }
 
 @Entry
@@ -47,6 +55,8 @@ struct CameraPage {
   @State private photoOutputWidth: number = 0;
   @State private photoOutputHeight: number = 0;
   @State private showSettings: boolean = false;
+  @State private editorMode: boolean = false;
+  @State private editorTab: number = 1;
   @State private watermarkText: string = '映刻 · 记录此刻';
   @State private watermarkOpacity: number = 80;
   @State private textSize: number = 4;
@@ -83,6 +93,8 @@ struct CameraPage {
   aboutToAppear(): void {
     this.setImmersive(true);
     this.selectedPreset = this.resolveWatermarkPreset();
+    this.editorMode = this.resolveEditorMode();
+    this.showSettings = this.editorMode;
     this.loadWatermarkPreset();
     this.abilityContext.eventHub.on(APP_FOREGROUND_EVENT, this.foregroundCallback);
     this.abilityContext.eventHub.on(APP_BACKGROUND_EVENT, this.backgroundCallback);
@@ -99,6 +111,12 @@ struct CameraPage {
     }
     return WatermarkPreset.TIME_LOCATION;
   }
+
+  private resolveEditorMode(): boolean {
+    const params = this.getUIContext().getRouter().getParams() as CameraParams;
+    return params?.editorMode === true;
+  }
+
 
   private loadWatermarkPreset(): void {
     if (this.selectedPreset === WatermarkPreset.CUSTOM) {
@@ -124,6 +142,7 @@ struct CameraPage {
     try {
       const settings = this.settingsRepository.load(this.abilityContext);
       this.applyTemplate(settings.template);
+      this.refreshDynamicWatermark();
     } catch (error) {
       AppLogger.warn(TAG, `读取默认水印设置失败：${JSON.stringify(error)}`);
       this.applyTemplate(createDefaultWatermarkTemplate());
@@ -150,23 +169,41 @@ struct CameraPage {
     this.showLogo = true;
   }
 
+  private requiresLocationWatermark(): boolean {
+    return this.watermarkElements.some((item: WatermarkElementConfig) =>
+      item.source === WatermarkElementSource.CAPTURE_LOCATION ||
+      item.source === WatermarkElementSource.CAPTURE_COORDINATES);
+  }
+
   private refreshDynamicWatermark(): void {
     if (this.selectedPreset === WatermarkPreset.CUSTOM) {
-      return;
+      const now = new Date();
+      this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) => {
+        const updated = cloneWatermarkElement(item);
+        if (item.source === WatermarkElementSource.CAPTURE_DATE_TIME) {
+          updated.text = item.id === 'preset_date' ? formatWatermarkDate(now) : formatWatermarkDateTime(now);
+        } else if (item.source === WatermarkElementSource.CAPTURE_LOCATION) {
+          updated.text = this.locationText;
+        } else if (item.source === WatermarkElementSource.CAPTURE_COORDINATES) {
+          updated.text = this.coordinateText;
+        }
+        return updated;
+      });
+    } else {
+      const template = this.selectedPreset === WatermarkPreset.MINIMAL_DATE ?
+        createMinimalDateWatermarkTemplate(new Date()) :
+        createTimeLocationWatermarkTemplate(new Date(), this.locationText, this.coordinateText);
+      this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) => {
+        const dynamicElement = template.elements.find(
+          (candidate: WatermarkElementConfig) => candidate.id === item.id);
+        if (!dynamicElement) {
+          return item;
+        }
+        const updated = cloneWatermarkElement(item);
+        updated.text = dynamicElement.text;
+        return updated;
+      });
     }
-    const template = this.selectedPreset === WatermarkPreset.MINIMAL_DATE ?
-      createMinimalDateWatermarkTemplate(new Date()) :
-      createTimeLocationWatermarkTemplate(new Date(), this.locationText, this.coordinateText);
-    this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) => {
-      const dynamicElement = template.elements.find(
-        (candidate: WatermarkElementConfig) => candidate.id === item.id);
-      if (!dynamicElement) {
-        return item;
-      }
-      const updated = cloneWatermarkElement(item);
-      updated.text = dynamicElement.text;
-      return updated;
-    });
     const firstText = this.watermarkElements.find(
       (item: WatermarkElementConfig) => item.type === WatermarkElementType.TEXT);
     this.watermarkText = firstText?.text ?? this.watermarkText;
@@ -282,7 +319,7 @@ struct CameraPage {
     if (this.permissionState === PermissionState.GRANTED) {
       await this.startCamera();
       await this.setImmersive(true);
-      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+      if (this.requiresLocationWatermark()) {
         this.loadCurrentLocationWatermark();
       }
     } else {
@@ -330,7 +367,7 @@ struct CameraPage {
     if (this.permissionState === PermissionState.GRANTED) {
       await this.startCamera();
       await this.setImmersive(true);
-      if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+      if (this.requiresLocationWatermark()) {
         await this.loadCurrentLocationWatermark();
       }
     }
@@ -341,7 +378,7 @@ struct CameraPage {
       return;
     }
     this.capturing = true;
-    if (this.selectedPreset === WatermarkPreset.TIME_LOCATION) {
+    if (this.requiresLocationWatermark()) {
       this.statusText = '正在获取拍摄位置…';
       await this.loadCurrentLocationWatermark();
     }
@@ -435,6 +472,92 @@ struct CameraPage {
     this.positionY = element.positionY;
   }
 
+  private selectedElementIsAutomatic(): boolean {
+    const index = this.selectedElementIndex();
+    return index >= 0 && isAutomaticWatermarkSource(this.watermarkElements[index].source);
+  }
+
+  private addQuickManualField(label: string): void {
+    if (this.watermarkElements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    const element = new WatermarkElementConfig(`capture_field_${Date.now()}`, WatermarkElementType.TEXT);
+    element.fieldLabel = label;
+    element.text = label === '姓名' ? '请输入姓名' : '请输入内容';
+    element.source = WatermarkElementSource.MANUAL;
+    element.positionX = 0.08;
+    element.positionY = Math.min(0.82, 0.18 + this.watermarkElements.length * 0.1);
+    element.sizePercent = 3.5;
+    this.watermarkElements = this.watermarkElements.concat([element]);
+    this.selectWatermark(element.id);
+  }
+
+  private selectEditorPreset(preset: WatermarkPreset): void {
+    this.selectedPreset = preset;
+    if (preset === WatermarkPreset.MINIMAL_DATE) {
+      this.applyTemplate(createMinimalDateWatermarkTemplate(new Date()));
+    } else if (preset === WatermarkPreset.TIME_LOCATION) {
+      this.applyTemplate(createTimeLocationWatermarkTemplate(
+        new Date(), this.locationText, this.coordinateText));
+      this.loadCurrentLocationWatermark();
+    } else {
+      this.loadCustomWatermark();
+    }
+    this.editorTab = 1;
+  }
+
+  private addQuickSource(source: WatermarkElementSource): void {
+    if (this.watermarkElements.length >= 8) {
+      this.showToast('最多可以添加 8 个水印元素');
+      return;
+    }
+    if (this.watermarkElements.some((item: WatermarkElementConfig) => item.source === source)) {
+      this.showToast('这个自动信息已经添加');
+      return;
+    }
+    const element = createSourceWatermarkElement(source, `capture_source_${Date.now()}`);
+    element.positionY = Math.min(0.82, 0.18 + this.watermarkElements.length * 0.1);
+    this.watermarkElements = this.watermarkElements.concat([element]);
+    this.selectWatermark(element.id);
+    if (source === WatermarkElementSource.CAPTURE_LOCATION ||
+      source === WatermarkElementSource.CAPTURE_COORDINATES) {
+      this.loadCurrentLocationWatermark();
+    }
+  }
+
+  private deleteSelectedElement(): void {
+    const index = this.selectedElementIndex();
+    if (index < 0 || this.watermarkElements.length <= 1) {
+      this.showToast('至少保留一个水印内容');
+      return;
+    }
+    this.watermarkElements = this.watermarkElements.filter((item: WatermarkElementConfig) =>
+      item.id !== this.selectedWatermarkId);
+    this.selectWatermark(this.watermarkElements[0].id);
+  }
+
+  private saveCurrentAsDefault(): void {
+    try {
+      const settings = new WatermarkDefaults();
+      settings.template.elements = this.watermarkElements.map((item: WatermarkElementConfig) =>
+        cloneWatermarkElement(item));
+      settings.template.brandSizePercent = this.brandSizePercent;
+      settings.template.brandOpacity = this.brandOpacity;
+      const firstText = this.watermarkElements.find((item: WatermarkElementConfig) =>
+        item.type === WatermarkElementType.TEXT);
+      settings.text = firstText?.text ?? '';
+      settings.showText = firstText?.visible ?? false;
+      settings.showLogo = true;
+      settings.opacity = Math.round((firstText?.opacity ?? 0.88) * 100);
+      this.settingsRepository.save(this.abilityContext, settings);
+      this.selectedPreset = WatermarkPreset.CUSTOM;
+      this.showToast('已保存为默认水印模板');
+    } catch (error) {
+      this.showToast(ErrorMessageUtil.from(error as object, '保存默认模板失败'));
+    }
+  }
+
   private replaceWatermarkElement(updated: WatermarkElementConfig): void {
     this.watermarkElements = this.watermarkElements.map((item: WatermarkElementConfig) =>
       item.id === updated.id ? updated : item);
@@ -470,6 +593,10 @@ struct CameraPage {
 
   private updateSelectedText(value: string): void {
     const index = this.selectedElementIndex();
+    if (index >= 0 && isAutomaticWatermarkSource(this.watermarkElements[index].source)) {
+      this.showToast('自动信息由设备获取，不能手动修改');
+      return;
+    }
     this.watermarkText = value;
     if (index < 0 || this.watermarkElements[index].type !== WatermarkElementType.TEXT) {
       return;
@@ -518,18 +645,18 @@ struct CameraPage {
 
   private orientedPhotoWidth(): number {
     if (this.photoOutputWidth <= 0 || this.photoOutputHeight <= 0) {
-      return Math.max(1, this.viewportWidth);
+      return Math.max(1, this.cameraViewportWidth());
     }
-    const viewportLandscape = this.viewportWidth >= this.viewportHeight;
+    const viewportLandscape = this.isLandscape();
     const photoLandscape = this.photoOutputWidth >= this.photoOutputHeight;
     return viewportLandscape === photoLandscape ? this.photoOutputWidth : this.photoOutputHeight;
   }
 
   private orientedPhotoHeight(): number {
     if (this.photoOutputWidth <= 0 || this.photoOutputHeight <= 0) {
-      return Math.max(1, this.viewportHeight);
+      return Math.max(1, this.cameraViewportHeight());
     }
-    const viewportLandscape = this.viewportWidth >= this.viewportHeight;
+    const viewportLandscape = this.isLandscape();
     const photoLandscape = this.photoOutputWidth >= this.photoOutputHeight;
     return viewportLandscape === photoLandscape ? this.photoOutputHeight : this.photoOutputWidth;
   }
@@ -549,11 +676,11 @@ struct CameraPage {
   }
 
   private previewImageScale(): number {
-    if (this.viewportWidth <= 0 || this.viewportHeight <= 0) {
+    if (this.cameraViewportWidth() <= 0 || this.cameraViewportHeight() <= 0) {
       return 1;
     }
-    return Math.min(this.viewportWidth / this.exportImageWidth(),
-      this.viewportHeight / this.exportImageHeight());
+    return Math.min(this.cameraViewportWidth() / this.exportImageWidth(),
+      this.cameraViewportHeight() / this.exportImageHeight());
   }
 
   private previewImageWidth(): number {
@@ -565,12 +692,13 @@ struct CameraPage {
   }
 
   private previewImageX(): number {
-    return (this.viewportWidth - this.previewImageWidth()) / 2;
+    return (this.cameraViewportWidth() - this.previewImageWidth()) / 2;
   }
 
   private previewImageY(): number {
-    return (this.viewportHeight - this.previewImageHeight()) / 2;
+    return (this.cameraViewportHeight() - this.previewImageHeight()) / 2;
   }
+
 
   private previewToExportScale(): number {
     return this.previewImageWidth() / this.exportImageWidth();
@@ -652,6 +780,30 @@ struct CameraPage {
     return this.viewportWidth >= 700;
   }
 
+  private isLandscape(): boolean {
+    return this.viewportWidth >= this.viewportHeight;
+  }
+
+  private editorPanelWidth(): number {
+    return this.editorMode && this.isLandscape() ? 420 : 0;
+  }
+
+  private editorPanelHeight(): number {
+    if (!this.editorMode || this.isLandscape()) {
+      return 0;
+    }
+    return Math.min(600, Math.max(360, this.viewportHeight * 0.46));
+  }
+
+  private cameraViewportWidth(): number {
+    return Math.max(1, this.viewportWidth - this.editorPanelWidth());
+  }
+
+  private cameraViewportHeight(): number {
+    return Math.max(1, this.viewportHeight - this.editorPanelHeight());
+  }
+
+
   private toggleText(value: boolean): void {
     const index = this.selectedElementIndex();
     this.showText = value;
@@ -694,87 +846,172 @@ struct CameraPage {
 
   @Builder
   private settingsPanel() {
-    Stack({ alignContent: Alignment.End }) {
-      Column().width('100%').height('100%').backgroundColor('#77000000')
-        .onClick(() => this.showSettings = false)
+    Stack({ alignContent: this.editorMode && !this.isLandscape() ? Alignment.Bottom : Alignment.End }) {
+      if (!this.editorMode) {
+        Column().width('100%').height('100%').backgroundColor('#77000000')
+          .onClick(() => this.showSettings = false)
+      }
 
       Column() {
-        Row() {
+        Row({ space: 12 }) {
           Column({ space: 3 }) {
-            Text('拍摄水印设置').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#3B2117')
-            Text('调整后会立即显示在取景器上').fontSize(12).fontColor('#9A725C')
+            Text('实时水印编辑').fontSize(22).fontWeight(FontWeight.Bold).fontColor('#3B2117')
+            Text('直接在取景画面上编辑并拍摄').fontSize(12).fontColor('#9A725C')
           }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-          Button('×').width(42).height(42).fontSize(24).type(ButtonType.Normal)
-            .fontColor('#5A3829').backgroundColor('#FFF0E3').borderRadius(21)
-            .onClick(() => this.showSettings = false)
-        }.width('100%').padding({ left: 22, right: 18, top: 20, bottom: 14 })
+          Button('保存').height(38).padding({ left: 16, right: 16 }).type(ButtonType.Normal)
+            .fontSize(13).fontWeight(FontWeight.Bold).fontColor(Color.White)
+            .backgroundColor('#E96832').borderRadius(19)
+            .onClick(() => this.saveCurrentAsDefault())
+          if (!this.editorMode) {
+            Button('×').width(38).height(38).fontSize(22).type(ButtonType.Normal)
+              .fontColor('#5A3829').backgroundColor('#FFF0E3').borderRadius(19)
+              .onClick(() => this.showSettings = false)
+          }
+        }.width('100%').padding({ left: 20, right: 18, top: 18, bottom: 12 })
+
+        Row() {
+          Button('模板').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+            .fontWeight(this.editorTab === 0 ? FontWeight.Bold : FontWeight.Regular)
+            .fontColor(this.editorTab === 0 ? Color.White : '#765442')
+            .backgroundColor(this.editorTab === 0 ? '#D96735' : Color.Transparent)
+            .borderRadius(14).onClick(() => this.editorTab = 0)
+          Button('内容').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+            .fontWeight(this.editorTab === 1 ? FontWeight.Bold : FontWeight.Regular)
+            .fontColor(this.editorTab === 1 ? Color.White : '#765442')
+            .backgroundColor(this.editorTab === 1 ? '#D96735' : Color.Transparent)
+            .borderRadius(14).onClick(() => this.editorTab = 1)
+          Button('样式').layoutWeight(1).height(40).type(ButtonType.Normal).fontSize(13)
+            .fontWeight(this.editorTab === 2 ? FontWeight.Bold : FontWeight.Regular)
+            .fontColor(this.editorTab === 2 ? Color.White : '#765442')
+            .backgroundColor(this.editorTab === 2 ? '#D96735' : Color.Transparent)
+            .borderRadius(14).onClick(() => this.editorTab = 2)
+        }.width('calc(100% - 40vp)').padding(4).backgroundColor('#F7E8DB').borderRadius(18)
 
         Scroll() {
-          Column({ space: 18 }) {
-            Column({ space: 8 }) {
-              Text('水印文字').fontSize(14).fontWeight(FontWeight.Medium)
-                .fontColor('#5A3829').width('100%')
-              TextArea({ text: this.watermarkText, placeholder: '输入水印文字，回车可换行' })
-                .width('100%').height(88).maxLength(100).backgroundColor('#FFF8F1')
-                .onChange((value: string) => this.updateSelectedText(value))
-            }.width('100%')
-
-            Row() {
-              Text('文字水印').fontSize(15).fontColor('#4A3025').layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.showText })
-                .onChange((value: boolean) => this.toggleText(value))
-            }.width('100%')
-
-            Row() {
-              Text('Logo 水印').fontSize(15).fontColor('#4A3025').layoutWeight(1)
-              Text('始终显示').fontSize(11).fontColor('#B45A31')
-                .padding({ left: 9, right: 9, top: 5, bottom: 5 })
-                .backgroundColor('#FFE9D7').borderRadius(12)
-            }.width('100%')
-
-            Column({ space: 6 }) {
-              Text(`透明度 ${Math.round(this.watermarkOpacity)}%`).fontSize(14)
-                .fontColor('#5A3829').width('100%')
-              Slider({ value: this.watermarkOpacity, min: 20, max: 100, step: 5 })
-                .selectedColor('#E96832').onChange((value: number) => this.updateSelectedOpacity(value))
-            }.width('100%')
-
-            Column({ space: 6 }) {
-              Text(`文字大小 ${this.textSize.toFixed(1)}%`).fontSize(14)
-                .fontColor('#5A3829').width('100%')
-              Slider({ value: this.textSize, min: 2, max: 8, step: 0.5 })
-                .selectedColor('#E96832').onChange((value: number) => this.updateSelectedSize(value))
-            }.width('100%')
-
-            Column({ space: 6 }) {
-              Text(`整体缩放 ${Math.round(this.watermarkScale * 100)}%`).fontSize(14)
-                .fontColor('#5A3829').width('100%')
-              Slider({ value: this.watermarkScale, min: 0.5, max: 2.5, step: 0.05 })
-                .selectedColor('#E96832').onChange((value: number) => this.updateScale(value))
-            }.width('100%')
-
-            Row({ space: 10 }) {
-              Button('左下').layoutWeight(1).height(42).type(ButtonType.Normal)
-                .fontColor('#5A3829').backgroundColor('#FFF0E3')
-                .onClick(() => this.updatePosition(0.1, 0.72))
-              Button('居中').layoutWeight(1).height(42).type(ButtonType.Normal)
-                .fontColor('#5A3829').backgroundColor('#FFF0E3')
-                .onClick(() => this.updatePosition(0.5, 0.5))
-              Button('右下').layoutWeight(1).height(42).type(ButtonType.Normal)
-                .fontColor(Color.White).backgroundColor('#E96832')
-                .onClick(() => this.updatePosition(0.9, 0.72))
-            }.width('100%')
-
-            Text('关闭设置后，可拖动、双指缩放或双击水印编辑。')
-              .fontSize(12).fontColor('#9A725C').width('100%').textAlign(TextAlign.Center)
-          }.width('100%').padding({ left: 22, right: 22, bottom: 28 })
+          Column({ space: 15 }) {
+            if (this.editorTab === 0) {
+              Text('选择拍摄模板').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#4A3025').width('100%')
+              Button('时间地点  ·  时间 / 地址 / 经纬度').width('100%').height(50).type(ButtonType.Normal)
+                .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+                .onClick(() => this.selectEditorPreset(WatermarkPreset.TIME_LOCATION))
+              Button('极简日期  ·  只显示拍摄日期').width('100%').height(50).type(ButtonType.Normal)
+                .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+                .onClick(() => this.selectEditorPreset(WatermarkPreset.MINIMAL_DATE))
+              Button('我的模板  ·  使用已保存内容').width('100%').height(50).type(ButtonType.Normal)
+                .fontSize(13).fontColor('#6A412F').backgroundColor('#FFF1E5').borderRadius(14)
+                .onClick(() => this.selectEditorPreset(WatermarkPreset.CUSTOM))
+              Text('切换模板后，水印会立即显示在实时取景画面中。')
+                .fontSize(11).lineHeight(17).fontColor('#9A725C').width('100%')
+            } else if (this.editorTab === 1) {
+              Row() {
+                Text('当前内容').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#4A3025')
+                Blank()
+                Text(`${this.watermarkElements.length}/8`).fontSize(11).fontColor('#A07A63')
+              }.width('100%')
+              ForEach(this.watermarkElements, (element: WatermarkElementConfig) => {
+                Row({ space: 10 }) {
+                  Text(element.type === WatermarkElementType.IMAGE ? '▧' : '⠿')
+                    .fontSize(17).fontColor('#B36A43')
+                  Column({ space: 3 }) {
+                    Text(watermarkElementDisplayText(element)).fontSize(13).fontColor('#4A3025')
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+                    if (element.type === WatermarkElementType.TEXT) {
+                      Text(watermarkSourceLabel(element.source)).fontSize(10)
+                        .fontColor(isAutomaticWatermarkSource(element.source) ? '#47745D' : '#9B623E')
+                    }
+                  }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+                  if (element.id === this.selectedWatermarkId) {
+                    Text('编辑中').fontSize(10).fontColor('#E96832')
+                  }
+                }.width('100%').padding(12)
+                  .backgroundColor(element.id === this.selectedWatermarkId ? '#FFF0E3' : '#FFF9F3')
+                  .borderRadius(14).onClick(() => {
+                    this.selectWatermark(element.id);
+                    this.editorTab = 2;
+                  })
+              }, (element: WatermarkElementConfig) => element.id)
+              Row({ space: 8 }) {
+                Button('＋姓名').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(12)
+                  .onClick(() => this.addQuickManualField('姓名'))
+                Button('＋自定义').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#78472E').backgroundColor('#FFF0E3').borderRadius(12)
+                  .onClick(() => this.addQuickManualField('自定义字段'))
+              }.width('100%')
+              Row({ space: 8 }) {
+                Button('＋日期时间').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(12)
+                  .onClick(() => this.addQuickSource(WatermarkElementSource.CAPTURE_DATE_TIME))
+                Button('＋地点').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(12)
+                  .onClick(() => this.addQuickSource(WatermarkElementSource.CAPTURE_LOCATION))
+                Button('＋经纬度').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#356149').backgroundColor('#E9F3EC').borderRadius(12)
+                  .onClick(() => this.addQuickSource(WatermarkElementSource.CAPTURE_COORDINATES))
+              }.width('100%')
+              Row({ space: 8 }) {
+                Text('◆ 自动信息锁定').fontSize(11).fontColor('#47745D')
+                Blank()
+                Text('✎ 手动信息标注').fontSize(11).fontColor('#9B623E')
+              }.width('100%').padding(12).backgroundColor('#FFF4E9').borderRadius(13)
+            } else {
+              if (this.selectedElementIsAutomatic()) {
+                Column({ space: 7 }) {
+                  Text(`◆ ${watermarkSourceLabel(this.watermarkElements[this.selectedElementIndex()].source)}`)
+                    .fontSize(12).fontWeight(FontWeight.Bold).fontColor('#47745D').width('100%')
+                  Text(this.watermarkText).fontSize(14).fontColor('#355544').width('100%')
+                  Text('拍摄时由设备自动获取，内容不可手动修改').fontSize(11).fontColor('#718D7B').width('100%')
+                }.width('100%').padding(14).backgroundColor('#EAF4ED').borderRadius(14)
+              } else {
+                Text('手动填写内容').fontSize(14).fontWeight(FontWeight.Medium)
+                  .fontColor('#5A3829').width('100%')
+                TextArea({ text: this.watermarkText, placeholder: '输入姓名或自定义内容' })
+                  .width('100%').height(80).maxLength(100).backgroundColor('#FFF8F1')
+                  .onChange((value: string) => this.updateSelectedText(value))
+                Text('✎ 手动填写 · 不代表拍摄现场自动信息').fontSize(11).fontColor('#9B623E').width('100%')
+              }
+              Column({ space: 6 }) {
+                Text(`透明度 ${Math.round(this.watermarkOpacity)}%`).fontSize(13).fontColor('#5A3829').width('100%')
+                Slider({ value: this.watermarkOpacity, min: 20, max: 100, step: 5 })
+                  .selectedColor('#E96832').onChange((value: number) => this.updateSelectedOpacity(value))
+              }.width('100%')
+              Column({ space: 6 }) {
+                Text(`大小 ${this.textSize.toFixed(1)}%`).fontSize(13).fontColor('#5A3829').width('100%')
+                Slider({ value: this.textSize, min: 2, max: 10, step: 0.5 })
+                  .selectedColor('#E96832').onChange((value: number) => this.updateSelectedSize(value))
+              }.width('100%')
+              Column({ space: 6 }) {
+                Text(`整体缩放 ${Math.round(this.watermarkScale * 100)}%`).fontSize(13).fontColor('#5A3829').width('100%')
+                Slider({ value: this.watermarkScale, min: 0.5, max: 2.5, step: 0.05 })
+                  .selectedColor('#E96832').onChange((value: number) => this.updateScale(value))
+              }.width('100%')
+              Row({ space: 8 }) {
+                Button('左下').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#5A3829').backgroundColor('#FFF0E3').onClick(() => this.updatePosition(0.1, 0.72))
+                Button('居中').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor('#5A3829').backgroundColor('#FFF0E3').onClick(() => this.updatePosition(0.5, 0.5))
+                Button('右下').layoutWeight(1).height(38).type(ButtonType.Normal).fontSize(11)
+                  .fontColor(Color.White).backgroundColor('#E96832').onClick(() => this.updatePosition(0.9, 0.72))
+              }.width('100%')
+              Button('删除当前内容').width('100%').height(40).type(ButtonType.Normal).fontSize(12)
+                .fontColor('#A24C3A').backgroundColor('#FFF5F0').borderRadius(13)
+                .onClick(() => this.deleteSelectedElement())
+              Text('也可以直接在取景画面中拖动、双指缩放水印。')
+                .fontSize(11).fontColor('#9A725C').width('100%').textAlign(TextAlign.Center)
+            }
+          }.width('100%').padding({ left: 20, right: 20, top: 16, bottom: 28 })
         }.layoutWeight(1).width('100%')
       }
-      .width(this.isWide() ? 390 : '92%').height('100%')
+      .width(this.editorMode ? (this.isLandscape() ? 420 : '100%') :
+        (this.isWide() ? 390 : '92%'))
+      .height(this.editorMode ? (this.isLandscape() ? '100%' : this.editorPanelHeight()) : '100%')
       .backgroundColor('#FFFFFBF7')
+      .border({ width: 1, color: '#E8C7AE' })
       .shadow({ radius: 24, color: '#44000000', offsetX: -8 })
     }.width('100%').height('100%').zIndex(20)
+      .hitTestBehavior(HitTestMode.Transparent)
   }
+
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
@@ -813,15 +1050,24 @@ struct CameraPage {
           .backgroundColor(this.flashEnabled ? '#664B3700' : '#66000000').borderRadius(26)
           .opacity(this.flashAvailable ? 1 : 0.5).onClick(() => this.toggleFlash())
 
-          Column({ space: 2 }) {
-            this.settingsGlyph()
-            Text('设置').fontSize(9).fontColor('#DDFFFFFF')
+          Column({ space: 1 }) {
+            Text('↻').fontSize(25).fontWeight(FontWeight.Bold).fontColor(Color.White)
+            Text('翻转').fontSize(9).fontColor('#DDFFFFFF')
           }
           .width(52).height(52).justifyContent(FlexAlign.Center)
           .backgroundColor('#66000000').borderRadius(26)
-          .onClick(() => this.showSettings = true)
-        }.width('100%').padding({ left: 18, right: 54, top: 18 })
+          .opacity(this.switching ? 0.5 : 1).onClick(() => this.switchCamera())
+          if (!this.editorMode) {
+            Column({ space: 2 }) {
+              this.settingsGlyph()
+              Text('设置').fontSize(9).fontColor('#DDFFFFFF')
+            }
+            .width(52).height(52).justifyContent(FlexAlign.Center)
+            .backgroundColor('#66000000').borderRadius(26)
+            .onClick(() => this.showSettings = true)
+          }
 
+        }.width('100%').padding({ left: 18, right: 18, top: 18 })
         Blank()
 
         if (this.statusText) {
@@ -840,7 +1086,8 @@ struct CameraPage {
             .enabled(this.ready && !this.capturing).onClick(() => this.takePhoto())
         }.width('100%').justifyContent(FlexAlign.Center)
           .padding({ left: 30, right: 30, bottom: 26 })
-      }.width('100%').height('100%')
+      }.width(this.cameraViewportWidth()).height(this.cameraViewportHeight())
+        .position({ x: 0, y: 0 })
         .hitTestBehavior(HitTestMode.Transparent)
 
       if (this.permissionState === PermissionState.GRANTED) {
@@ -849,7 +1096,10 @@ struct CameraPage {
             WatermarkElementOverlay({
               elementId: element.id,
               elementType: element.type,
-              text: element.text,
+              text: watermarkElementDisplayText(element),
+              sourceBadgeText: element.type === WatermarkElementType.TEXT && element.showSourceBadge ?
+                watermarkSourceLabel(element.source) : '',
+              sourceBadgeAutomatic: isAutomaticWatermarkSource(element.source),
               imageUri: element.imageUri,
               opacityValue: element.opacity,
               sizeValue: this.previewElementSize(element),
